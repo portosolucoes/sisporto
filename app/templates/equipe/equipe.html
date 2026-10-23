@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}Equipe{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Equipe</h1><div class="muted">A equipe entra com a conta Google @portosolucoes.com.br.</div></div></div>
+<div class="tabela" style="margin-bottom:18px"><table><thead><tr><th>Nome</th><th>Perfil</th><th>Último acesso</th><th>Situação</th><th></th></tr></thead><tbody>
+{% for u in lista %}<tr><td>{{ u.nome }}<div class="muted small">{{ u.email }}</div></td>
+<td>{% if u.id != usuario.id %}<form method="post" action="{{ url_for('equipe.usuario_atualizar', usuario_id=u.id) }}" class="linha">{{ m.csrf_input() }}<input type="hidden" name="acao" value="perfil">
+  <select name="perfil" onchange="this.form.submit()" aria-label="Perfil">{% for p in ['admin','tecnico','financeiro'] %}<option value="{{ p }}" {{ 'selected' if u.perfil == p }}>{{ p|rotulo('perfil') }}</option>{% endfor %}</select></form>{% else %}{{ u.perfil|rotulo('perfil') }}{% endif %}</td>
+<td class="small">{{ u.ultimo_acesso|data_hora }}</td>
+<td>{% if u.ativo %}<span class="selo ok">Ativo</span>{% else %}<span class="selo">Inativo</span>{% endif %}</td>
+<td style="white-space:nowrap">
+  <form method="post" action="{{ url_for('equipe.usuario_atualizar', usuario_id=u.id) }}" style="display:inline">{{ m.csrf_input() }}<input type="hidden" name="acao" value="senha"><button class="btn sec peq">Senha temporária</button></form>
+  {% if u.id != usuario.id %}<form method="post" action="{{ url_for('equipe.usuario_atualizar', usuario_id=u.id) }}" style="display:inline">{{ m.csrf_input() }}<input type="hidden" name="acao" value="alternar"><button class="btn sec peq">{{ 'Desativar' if u.ativo else 'Reativar' }}</button></form>{% endif %}
+</td></tr>{% endfor %}</tbody></table></div>
+<form method="post" class="card linha">{{ m.csrf_input() }}
+  <div style="flex:1;min-width:160px"><label>Nome</label><input type="text" name="nome" required></div>
+  <div style="flex:1;min-width:200px"><label>E-mail Google</label><input type="email" name="email" required placeholder="nome@portosolucoes.com.br"></div>
+  <div><label>Perfil</label><select name="perfil">{% for p in ['tecnico','financeiro','admin'] %}<option value="{{ p }}">{{ p|rotulo('perfil') }}</option>{% endfor %}</select></div>
+  <button class="btn">Incluir</button>
+</form>
+{% endblock %}

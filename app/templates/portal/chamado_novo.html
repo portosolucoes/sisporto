@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block titulo %}Abrir chamado{% endblock %}
+{% block conteudo %}
+<div class="topo"><h1>Abrir chamado</h1></div>
+<form method="post" class="card" style="max-width:760px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="campo"><label>Assunto</label><input type="text" name="titulo" value="{{ form.titulo }}" required maxlength="200" placeholder="Ex.: Impressora do financeiro não imprime"></div>
+  <div class="campo"><label>Descreva o problema ou pedido</label><textarea name="descricao" required placeholder="O que aconteceu, desde quando, quem é afetado…">{{ form.descricao }}</textarea></div>
+  <div class="campo"><label>Urgência</label><select name="prioridade">
+    <option value="baixa" {{ 'selected' if form.prioridade == 'baixa' }}>Baixa – dúvida ou solicitação</option>
+    <option value="media" {{ 'selected' if (form.prioridade or 'media') == 'media' }}>Média – problema com alternativa</option>
+    <option value="alta" {{ 'selected' if form.prioridade == 'alta' }}>Alta – pessoa ou setor parado</option>
+    <option value="critica" {{ 'selected' if form.prioridade == 'critica' }}>Crítica – empresa sem operar</option>
+  </select></div>
+  <button class="btn">Enviar chamado</button>
+</form>
+{% endblock %}

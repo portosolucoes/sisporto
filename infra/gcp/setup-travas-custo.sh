@@ -180,7 +180,7 @@ cat > "$DIR/politica.json" <<JSON
       "filter": "metric.type=\"$METRICA\" AND resource.type=\"global\"",
       "comparison": "COMPARISON_GT",
       "thresholdValue": 0.999,
-      "duration": "0s",
+      "duration": "60s",
       "aggregations": [{"alignmentPeriod": "3600s", "perSeriesAligner": "ALIGN_MAX"}],
       "evaluationMissingData": "EVALUATION_MISSING_DATA_NO_OP",
       "trigger": {"count": 1}
@@ -200,8 +200,8 @@ cat > "$DIR/politica.json" <<JSON
   }
 }
 JSON
-if [[ -z "$(gcloud alpha monitoring policies list \
-      --filter='displayName="Porto - GASTO ACIMA DO TETO (aviso diário)"' --format='value(name)')" ]]; then
+if ! gcloud alpha monitoring policies list --format='value(displayName)' \
+      | grep -qxF "Porto - GASTO ACIMA DO TETO (aviso diário)"; then
   gcloud alpha monitoring policies create --policy-from-file="$DIR/politica.json" >/dev/null
 fi
 

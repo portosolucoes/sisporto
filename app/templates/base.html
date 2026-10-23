@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block titulo %}SisPorto{% endblock %} · Porto Soluções</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+{% if usuario %}
+<div class="app">
+  <aside class="side">
+    <div class="marca"><span>PS</span>SisPorto</div>
+    <nav>
+      {% set ep = request.endpoint or '' %}
+      {% if usuario.perfil == 'cliente' %}
+        <a href="{{ url_for('portal.painel') }}" class="{{ 'ativo' if ep == 'portal.painel' }}">Painel</a>
+        <a href="{{ url_for('portal.chamados') }}" class="{{ 'ativo' if ep.startswith('portal.chamado') }}">Meus chamados</a>
+        <a href="{{ url_for('portal.chamado_novo') }}">Abrir chamado</a>
+        <a href="{{ url_for('portal.horas') }}" class="{{ 'ativo' if ep == 'portal.horas' }}">Relatório de horas</a>
+      {% else %}
+        <a href="{{ url_for('equipe.painel') }}" class="{{ 'ativo' if ep == 'equipe.painel' }}">Painel</a>
+        <a href="{{ url_for('equipe.chamados') }}" class="{{ 'ativo' if ep.startswith('equipe.chamado') }}">Chamados</a>
+        <a href="{{ url_for('equipe.horas') }}" class="{{ 'ativo' if ep.startswith('equipe.hora') }}">Horas</a>
+        <div class="sec">Cadastros</div>
+        <a href="{{ url_for('equipe.clientes') }}" class="{{ 'ativo' if ep.startswith('equipe.cliente') or ep.startswith('equipe.contrato') }}">Clientes e contratos</a>
+        {% if usuario.perfil == 'admin' %}
+        <a href="{{ url_for('equipe.equipe_lista') }}" class="{{ 'ativo' if ep == 'equipe.equipe_lista' }}">Equipe</a>
+        <a href="{{ url_for('equipe.config_sla') }}" class="{{ 'ativo' if ep == 'equipe.config_sla' }}">Prazos (SLA)</a>
+        {% endif %}
+      {% endif %}
+    </nav>
+    <div class="quem">
+      <div style="color:#fff">{{ usuario.nome }}</div>
+      <div>{{ usuario.perfil|rotulo('perfil') }}</div>
+      <a href="{{ url_for('auth.trocar_senha') }}" style="color:#9fb3cf">Trocar senha</a>
+      <form method="post" action="{{ url_for('auth.sair') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Sair</button></form>
+    </div>
+  </aside>
+  <main>
+    {% include "_avisos.html" %}
+    {% block conteudo %}{% endblock %}
+  </main>
+</div>
+{% else %}
+  {% block publico %}{% endblock %}
+{% endif %}
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

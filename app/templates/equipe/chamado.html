@@ -1,0 +1,68 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}#{{ c.numero }} {{ c.titulo }}{% endblock %}
+{% block conteudo %}
+<div class="topo">
+  <div><div class="muted small"><a href="{{ url_for('equipe.chamados') }}">Chamados</a> / #{{ c.numero }}</div>
+  <h1>#{{ c.numero }} · {{ c.titulo }}</h1>
+  <div>{{ m.selo(c.status, 'status') }} {{ m.selo(c.prioridade, 'prioridade') }} {{ m.selo(c.situacao_sla, 'sla') }}
+    {% if c.resposta_atrasada %}<span class="selo bad">1ª resposta atrasada</span>{% endif %}</div></div>
+</div>
+<div class="grid g-2-1">
+  <div>
+    <div class="card"><h3>Descrição</h3><div class="txt" style="white-space:pre-wrap">{{ c.descricao }}</div></div>
+    <div class="card"><h2>Conversa</h2>{{ m.linha_do_tempo(tempo) }}
+      <form method="post" action="{{ url_for('equipe.chamado_responder', numero=c.numero) }}">
+        {{ m.csrf_input() }}
+        <div class="campo"><label>Responder</label><textarea name="texto" required placeholder="Mensagem para o cliente (ou nota interna)"></textarea></div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+          <label class="check"><input type="checkbox" name="interna" value="1"> Nota interna (cliente não vê)</label>
+          <div><select name="status_apos" aria-label="Status após responder">
+            <option value="">Manter status</option>
+            <option value="em_atendimento">→ Em atendimento</option>
+            <option value="aguardando_cliente">→ Aguardando cliente</option>
+            <option value="resolvido">→ Resolvido</option></select></div>
+          <button class="btn">Enviar</button>
+        </div>
+      </form>
+    </div>
+    <div class="card" id="horas"><h2>Horas</h2>
+      <div class="tabela" style="margin-bottom:12px">{% if horas %}<table><thead><tr><th>Data</th><th>Técnico</th><th>O que foi feito</th><th class="num">Tempo</th><th>Faturável</th><th>Status</th><th></th></tr></thead><tbody>
+      {% for h in horas %}<tr><td>{{ h.data|data }}</td><td>{{ h.tecnico }}</td><td>{{ h.descricao }}</td><td class="num">{{ h.minutos|horas }}</td><td>{{ 'Sim' if h.faturavel else 'Não' }}</td><td>{{ m.selo(h.status, 'apontamento') }}</td>
+        <td>{% if h.status == 'pendente' and (h.usuario_id == usuario.id or usuario.perfil == 'admin') %}<form method="post" action="{{ url_for('equipe.hora_excluir', apontamento_id=h.id) }}">{{ m.csrf_input() }}<button class="btn peq perigo">Excluir</button></form>{% endif %}</td></tr>{% endfor %}
+      </tbody></table>{% else %}<div class="vazio">Nenhuma hora lançada.</div>{% endif %}</div>
+      <form method="post" action="{{ url_for('equipe.chamado_horas', numero=c.numero) }}" class="linha">
+        {{ m.csrf_input() }}
+        <div><label>Data</label><input type="date" name="data" value="{{ hoje.isoformat() }}" max="{{ hoje.isoformat() }}" required></div>
+        <div style="width:110px"><label>Duração</label><input type="text" name="duracao" placeholder="1:30" required></div>
+        <div style="flex:1;min-width:220px"><label>O que foi feito</label><input type="text" name="descricao" required></div>
+        <label class="check"><input type="checkbox" name="faturavel" value="1" checked> Faturável</label>
+        <button class="btn">Lançar</button>
+      </form>
+    </div>
+  </div>
+  <div>
+    <div class="card"><h3>Detalhes</h3>
+      <dl class="ficha">
+        <dt>Cliente</dt><dd><a href="{{ url_for('equipe.cliente', cliente_id=c.cliente_id) }}">{{ c.cliente_nome }}</a></dd>
+        <dt>Solicitante</dt><dd>{{ solicitante.nome if solicitante else c.solicitante_email }}</dd>
+        <dt>Origem</dt><dd>{{ c.origem|rotulo('origem') }}</dd>
+        <dt>Aberto em</dt><dd>{{ c.criado_em|data_hora }}</dd>
+        <dt>1ª resposta</dt><dd>{{ c.primeira_resposta_em|data_hora }} <span class="muted small">(prazo {{ c.prazo_1a_resposta|data_hora }})</span></dd>
+        <dt>Prazo solução</dt><dd>{{ c.prazo_solucao|data_hora }}</dd>
+        {% if c.resolvido_em %}<dt>Resolvido em</dt><dd>{{ c.resolvido_em|data_hora }}</dd>{% endif %}
+        <dt>Horas</dt><dd>{{ c.minutos_apontados|horas }}</dd>
+        {% if c.avaliacao %}<dt>Avaliação</dt><dd>{{ c.avaliacao }}/5 {{ c.avaliacao_comentario or '' }}</dd>{% endif %}
+      </dl>
+    </div>
+    <form class="card" method="post" action="{{ url_for('equipe.chamado_atualizar', numero=c.numero) }}">
+      {{ m.csrf_input() }}<h3>Atualizar</h3>
+      <div class="campo"><label>Status</label><select name="status">{% for s in status_lista %}<option value="{{ s }}" {{ 'selected' if c.status == s }}>{{ s|rotulo('status') }}</option>{% endfor %}</select></div>
+      <div class="campo"><label>Prioridade</label><select name="prioridade">{% for p in prioridades %}<option value="{{ p }}" {{ 'selected' if c.prioridade == p }}>{{ p|rotulo('prioridade') }}</option>{% endfor %}</select><div class="ajuda">Mudar a prioridade recalcula o prazo.</div></div>
+      <div class="campo"><label>Responsável</label><select name="responsavel_id"><option value="">Ninguém</option>{% for t in tecnicos %}<option value="{{ t.id }}" {{ 'selected' if c.responsavel_id == t.id }}>{{ t.nome }}</option>{% endfor %}</select></div>
+      <div class="campo"><label>Contrato</label><select name="contrato_id"><option value="">Sem contrato</option>{% for ct in contratos %}<option value="{{ ct.id }}" {{ 'selected' if c.contrato_id == ct.id }}>{{ ct.descricao }}</option>{% endfor %}</select></div>
+      <div class="campo"><label>Categoria</label><input type="text" name="categoria" value="{{ c.categoria or '' }}"></div>
+      <button class="btn">Salvar</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

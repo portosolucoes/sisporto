@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block titulo %}Contrato{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><div class="muted small"><a href="{{ url_for('equipe.cliente', cliente_id=cliente.id) }}">{{ cliente.nome_fantasia }}</a></div>
+<h1>{{ 'Novo contrato' if novo else 'Editar contrato' }}</h1></div></div>
+<form method="post" class="card" style="max-width:820px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="grid g2">
+    <div class="campo"><label>Tipo *</label><select name="tipo" required><option value="">Escolha…</option>
+      {% for v in ['mensal_fixo','banco_horas','hora_avulsa','projeto','proposta_avulsa'] %}<option value="{{ v }}" {{ 'selected' if ct.tipo == v }}>{{ v|rotulo('tipo_contrato') }}</option>{% endfor %}</select></div>
+    <div class="campo"><label>Descrição *</label><input type="text" name="descricao" value="{{ ct.descricao or '' }}" required placeholder="Ex.: Suporte mensal – 10h"></div>
+    <div class="campo"><label>Valor mensal (R$)</label><input type="text" name="valor_mensal" value="{{ ct.valor_mensal or '' }}"><div class="ajuda">Obrigatório no mensal fixo.</div></div>
+    <div class="campo"><label>Franquia de horas no mês</label><input type="text" name="franquia_horas" value="{{ ct.franquia_horas or '' }}"><div class="ajuda">Mensal fixo: acima disso vira excedente.</div></div>
+    <div class="campo"><label>Valor da hora (R$)</label><input type="text" name="valor_hora" value="{{ ct.valor_hora or '' }}"><div class="ajuda">Hora avulsa e excedentes.</div></div>
+    <div class="campo"><label>Horas do pacote</label><input type="text" name="horas_pacote" value="{{ ct.horas_pacote or '' }}"><div class="ajuda">Obrigatório no banco de horas.</div></div>
+    <div class="campo"><label>Valor total (R$)</label><input type="text" name="valor_total" value="{{ ct.valor_total or '' }}"><div class="ajuda">Projeto e proposta avulsa.</div></div>
+    <div class="campo"><label>Dia de vencimento</label><input type="number" min="1" max="28" name="dia_vencimento" value="{{ ct.dia_vencimento or '' }}"></div>
+    <div class="campo"><label>Início *</label><input type="date" name="data_inicio" value="{{ ct.data_inicio or '' }}" required></div>
+    <div class="campo"><label>Fim / validade</label><input type="date" name="data_fim" value="{{ ct.data_fim or '' }}"></div>
+    <div class="campo"><label>Índice de reajuste</label><input type="text" name="indice_reajuste" value="{{ ct.indice_reajuste or '' }}" placeholder="IPCA, IGP-M"></div>
+    <div class="campo"><label>Mês do reajuste</label><input type="number" min="1" max="12" name="mes_reajuste" value="{{ ct.mes_reajuste or '' }}"></div>
+  </div>
+  {% if not novo %}<div class="campo"><label class="check"><input type="checkbox" name="ativo" value="1" {{ 'checked' if ct.ativo in (true, '1') }}> Contrato ativo</label></div>{% endif %}
+  <button class="btn">Salvar</button> <a class="btn sec" href="{{ url_for('equipe.cliente', cliente_id=cliente.id) }}">Cancelar</a>
+</form>
+{% endblock %}

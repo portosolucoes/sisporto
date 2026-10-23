@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block titulo %}Prazos (SLA){% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Prazos de atendimento (SLA)</h1><div class="muted">Contados em horário útil. Use formatos como 1h, 4h, 20h (2 dias úteis = 20h).</div></div></div>
+<form method="post" class="card" style="max-width:640px"><input type="hidden" name="csrf" value="{{ csrf }}">
+<table><thead><tr><th>Prioridade</th><th>1ª resposta</th><th>Solução</th></tr></thead><tbody>
+{% for r in regras %}<tr><td><span class="selo {{ r.prioridade }}">{{ r.prioridade|rotulo('prioridade') }}</span></td>
+<td><input type="text" name="{{ r.prioridade }}_resposta" value="{{ r.minutos_1a_resposta|horas }}"></td>
+<td><input type="text" name="{{ r.prioridade }}_solucao" value="{{ r.minutos_solucao|horas }}"></td></tr>{% endfor %}
+</tbody></table><p><button class="btn">Salvar prazos</button></p></form>
+<div class="grid g2">
+<div class="card"><h2>Expediente</h2><table><tbody>{% set dias = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'] %}
+{% for e in expediente %}<tr><td>{{ dias[e.dia_semana] }}</td><td>{{ e.inicio.strftime('%H:%M') }} – {{ e.fim.strftime('%H:%M') }}</td></tr>{% endfor %}</tbody></table></div>
+<div class="card"><h2>Próximos feriados</h2><table><tbody>{% for f in feriados %}<tr><td>{{ f.data|data }}</td><td>{{ f.descricao }}</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endblock %}

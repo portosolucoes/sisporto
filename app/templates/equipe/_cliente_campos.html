@@ -1,0 +1,15 @@
+<form method="post" class="card" style="max-width:820px" action="{{ url_for('equipe.cliente_novo') if novo else url_for('equipe.cliente', cliente_id=c.id) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="grid g2">
+    <div class="campo"><label>Razão social *</label><input type="text" name="razao_social" value="{{ c.razao_social or '' }}" required></div>
+    <div class="campo"><label>Nome fantasia</label><input type="text" name="nome_fantasia" value="{{ c.nome_fantasia or '' }}"></div>
+    <div class="campo"><label>CNPJ</label><input type="text" name="cnpj" value="{{ c.cnpj|cnpj if c.cnpj else '' }}" placeholder="00.000.000/0000-00"></div>
+    <div class="campo"><label>Telefone</label><input type="text" name="telefone" value="{{ c.telefone or '' }}"></div>
+    <div class="campo"><label>E-mail do financeiro</label><input type="email" name="email_financeiro" value="{{ c.email_financeiro or '' }}"></div>
+    <div class="campo"><label>Domínio de e-mail</label><input type="text" name="dominio_email" value="{{ c.dominio_email or '' }}" placeholder="empresa.com.br"><div class="ajuda">E-mails desse domínio enviados ao suporte@ viram chamados deste cliente.</div></div>
+  </div>
+  <div class="campo"><label>Endereço</label><input type="text" name="endereco" value="{{ c.endereco or '' }}"></div>
+  <div class="campo"><label>Observações</label><textarea name="observacoes" style="min-height:70px">{{ c.observacoes or '' }}</textarea></div>
+  {% if not novo %}<div class="campo"><label class="check"><input type="checkbox" name="ativo" value="1" {{ 'checked' if c.ativo }}> Cliente ativo</label></div>{% endif %}
+  <button class="btn">Salvar</button>
+</form>

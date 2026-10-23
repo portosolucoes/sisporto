@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}#{{ c.numero }}{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><div class="muted small"><a href="{{ url_for('portal.chamados') }}">Chamados</a> / #{{ c.numero }}</div>
+<h1>#{{ c.numero }} · {{ c.titulo }}</h1><div>{{ m.selo(c.status,'status') }} {{ m.selo(c.prioridade,'prioridade') }}</div></div></div>
+<div class="grid g-2-1">
+  <div>
+    <div class="card"><h3>Descrição</h3><div style="white-space:pre-wrap">{{ c.descricao }}</div></div>
+    <div class="card"><h2>Conversa</h2>{{ m.linha_do_tempo(tempo) }}
+      {% if c.status != 'fechado' %}
+      <form method="post" action="{{ url_for('portal.chamado_responder', numero=c.numero) }}">{{ m.csrf_input() }}
+        <div class="campo"><label>Sua mensagem</label><textarea name="texto" required></textarea></div>
+        {% if c.status == 'resolvido' %}<label class="check campo"><input type="checkbox" name="reabrir" value="1"> O problema não foi resolvido — reabrir chamado</label>{% endif %}
+        <button class="btn">Enviar</button></form>
+      {% endif %}
+    </div>
+    {% if c.status in ('resolvido','fechado') and not c.avaliacao %}
+    <form class="card" method="post" action="{{ url_for('portal.chamado_avaliar', numero=c.numero) }}">{{ m.csrf_input() }}
+      <h2>Como foi o atendimento?</h2>
+      <div class="campo" style="display:flex;gap:14px">{% for n in range(1,6) %}<label class="check"><input type="radio" name="nota" value="{{ n }}" required> {{ n }}</label>{% endfor %}</div>
+      <div class="campo"><label>Comentário (opcional)</label><input type="text" name="comentario"></div>
+      <button class="btn">Avaliar e encerrar</button></form>
+    {% endif %}
+  </div>
+  <div>
+    <div class="card"><h3>Detalhes</h3><dl class="ficha">
+      <dt>Aberto em</dt><dd>{{ c.criado_em|data_hora }}</dd>
+      <dt>Responsável</dt><dd>{{ c.responsavel_nome or 'Em triagem' }}</dd>
+      <dt>Previsão</dt><dd>{{ c.prazo_solucao|data_hora }}</dd>
+      {% if c.resolvido_em %}<dt>Resolvido em</dt><dd>{{ c.resolvido_em|data_hora }}</dd>{% endif %}
+      <dt>Horas</dt><dd>{{ horas|sum(attribute='minutos')|horas }}</dd>
+      {% if c.avaliacao %}<dt>Sua avaliação</dt><dd>{{ c.avaliacao }}/5</dd>{% endif %}
+    </dl></div>
+    {% if horas %}<div class="card"><h3>Horas deste chamado</h3><table><tbody>{% for h in horas %}<tr><td class="small">{{ h.data|data }}</td><td class="small">{{ h.descricao }}</td><td class="num">{{ h.minutos|horas }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% macro selo(valor, grupo) -%}<span class="selo {{ valor }}">{{ valor|rotulo(grupo) }}</span>{%- endmacro %}
+
+{% macro tabela_chamados(lista, rota, mostrar_cliente=true, mostrar_resp=true, mostrar_sla=true) %}
+<div class="tabela">
+{% if lista %}
+<table>
+  <thead><tr><th>Nº</th><th>Título</th>{% if mostrar_cliente %}<th>Cliente</th>{% endif %}<th>Prioridade</th><th>Status</th>{% if mostrar_sla %}<th>SLA</th>{% endif %}{% if mostrar_resp %}<th>Responsável</th>{% endif %}<th>{{ 'Prazo' if mostrar_sla else 'Previsão' }}</th></tr></thead>
+  <tbody>
+  {% for c in lista %}
+  <tr>
+    <td><a href="{{ url_for(rota, numero=c.numero) }}">#{{ c.numero }}</a></td>
+    <td class="titulo"><a href="{{ url_for(rota, numero=c.numero) }}">{{ c.titulo }}</a></td>
+    {% if mostrar_cliente %}<td>{{ c.cliente_nome }}</td>{% endif %}
+    <td>{{ selo(c.prioridade, 'prioridade') }}</td>
+    <td>{{ selo(c.status, 'status') }}</td>
+    {% if mostrar_sla %}<td>{{ selo(c.situacao_sla, 'sla') }}</td>{% endif %}
+    {% if mostrar_resp %}<td>{{ c.responsavel_nome or '—' }}</td>{% endif %}
+    <td class="small">{{ c.prazo_solucao|data_hora }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="vazio">Nenhum chamado por aqui.</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro linha_do_tempo(tempo, equipe=true) %}
+<ul class="tempo" id="conversa">
+{% for i in tempo %}
+  {% if i.tipo_item == 'status' %}
+  <li class="evento">{{ i.em|data_hora }} · {{ i.autor }} mudou o status de <b>{{ i.de|rotulo('status') }}</b> para <b>{{ i.para|rotulo('status') }}</b></li>
+  {% else %}
+  <li class="{{ 'interna' if i.tipo == 'interna' }} {{ 'equipe' if i.perfil and i.perfil != 'cliente' }}">
+    <div class="cab"><span><b>{{ i.autor }}</b>{% if i.tipo == 'interna' %} · nota interna{% endif %}</span><span>{{ i.em|data_hora }}</span></div>
+    <div class="txt">{{ i.texto }}</div>
+  </li>
+  {% endif %}
+{% else %}
+  <li class="evento">Ainda não há mensagens.</li>
+{% endfor %}
+</ul>
+{% endmacro %}
+
+{% macro csrf_input() %}<input type="hidden" name="csrf" value="{{ csrf }}">{% endmacro %}

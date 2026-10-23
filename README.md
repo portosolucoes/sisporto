@@ -1,34 +1,53 @@
 # SisPorto
 
-Sistema de gestão da **Porto Soluções Corporativas**: help desk, portal do cliente,
-projetos, apontamento de horas, contratos, faturamento e financeiro.
+Sistema de gestão da **Porto Soluções Corporativas**: help desk com SLA, portal do cliente
+com painel de horas, apontamento e aprovação de horas, clientes e contratos.
+(Fase 1. Projetos, faturamento e financeiro vêm nas próximas fases.)
+
+## O que já funciona (Fase 1)
+
+| Equipe Porto | Portal do cliente |
+|---|---|
+| Painel: abertos, SLA estourado/em risco, fila sem responsável | Painel: horas do mês, saldo do banco de horas, franquia, gráfico por mês |
+| Chamados: filtros, conversa, nota interna, status, prioridade, responsável | Abrir chamado, acompanhar, responder, reabrir |
+| Prazos em horário útil (seg–sex 8h–18h, feriados), pausa em "aguardando cliente" | Avaliação do atendimento (1 a 5) |
+| Lançamento de horas por chamado; aprovação pelo administrador | Relatório mensal de horas |
+| Clientes, contratos (5 modalidades), contatos com acesso ao portal | |
+| Equipe e perfis (admin, técnico, financeiro), configuração de SLA | |
+
+Segurança: senhas com hash, proteção CSRF, cookies seguros, cada cliente só vê os próprios dados,
+auditoria de contratos, horas e usuários no banco.
 
 ## Estrutura
 
 | Pasta | Conteúdo |
 |---|---|
-| `db/` | Banco PostgreSQL (Cloud SQL): tabelas, regras de SLA, visões e dados iniciais |
-| `db/tests/` | Testes das regras do banco |
-| `infra/gcp/` | Configuração do Google Cloud (travas de custo) |
+| `app/` | Aplicação Flask (rotas, telas, regras) |
+| `db/` | Banco PostgreSQL: tabelas, regras de SLA, visões, dados iniciais |
+| `tests/` | Testes de ponta a ponta (16) |
+| `infra/gcp/` | Travas de custo e script de publicação no Google Cloud |
 
-## Banco de dados
-
-Aplicar em ordem:
+## Publicar / atualizar (Cloud Shell)
 
 ```bash
-psql -v ON_ERROR_STOP=1 -f db/001_schema.sql -f db/002_funcoes_sla.sql \
-     -f db/003_views.sql -f db/010_dados_iniciais.sql
-psql -v ON_ERROR_STOP=1 -f db/tests/teste_regras.sql   # roda em transação e desfaz
+git clone https://github.com/portosolucoes/sisporto.git && cd sisporto   # 1ª vez
+git pull                                                                   # nas atualizações
+bash infra/gcp/publicar.sh
 ```
 
-Regras automáticas no banco:
-- Prazos de SLA em **horário útil** (seg–sex 8h–18h, feriados nacionais), por prioridade e contrato
-- Pausa do SLA em "aguardando cliente" e retomada automática quando o cliente responde
-- Primeira resposta registrada quando a equipe responde
-- Histórico de status, auditoria de contratos, horas e usuários
-- Saldo de banco de horas e excedente de franquia mensal
+## Rodar localmente
 
-## Infra
+```bash
+pip install -r requirements.txt
+export DATABASE_URL="host=/tmp user=postgres dbname=sisporto" SECRET_KEY=dev COOKIE_SEGURO=0
+flask --app app banco-criar
+flask --app app demo            # opcional: dados de exemplo (senha demo-sisporto-2026)
+flask --app app run
+python -m unittest -v tests.test_app
+```
 
-- Google Cloud, projeto `porto-sisporto-2610`, região `southamerica-east1`
-- Orçamento mensal com alertas e aviso diário após estouro (`infra/gcp/`)
+## Comandos de manutenção
+
+- `flask --app app banco-criar` – cria tabelas e dados iniciais numa base vazia
+- `flask --app app definir-senha EMAIL` – gera senha temporária
+- `flask --app app demo` – dados de exemplo (só teste)

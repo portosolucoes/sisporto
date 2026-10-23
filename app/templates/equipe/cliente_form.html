@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block titulo %}{{ 'Novo cliente' if novo else 'Editar cliente' }}{% endblock %}
+{% block conteudo %}
+<div class="topo"><h1>{{ 'Novo cliente' if novo else 'Editar cliente' }}</h1></div>
+{% include "equipe/_cliente_campos.html" %}
+{% endblock %}

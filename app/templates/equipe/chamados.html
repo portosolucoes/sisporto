@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}Chamados{% endblock %}
+{% block conteudo %}
+<div class="topo"><h1>Chamados</h1><a class="btn" href="{{ url_for('equipe.chamado_novo') }}">+ Novo chamado</a></div>
+<form class="linha card" method="get">
+  <div><label>Situação</label><select name="situacao">
+    {% for v, t in [('abertos','Abertos'),('estourado','SLA estourado'),('em_risco','SLA em risco'),('novo','Novos'),('em_atendimento','Em atendimento'),('aguardando_cliente','Aguardando cliente'),('resolvido','Resolvidos'),('fechado','Fechados'),('todos','Todos')] %}
+    <option value="{{ v }}" {{ 'selected' if f.situacao == v }}>{{ t }}</option>{% endfor %}</select></div>
+  <div><label>Cliente</label><select name="cliente"><option value="">Todos</option>
+    {% for c in clientes %}<option value="{{ c.id }}" {{ 'selected' if f.cliente == c.id|string }}>{{ c.nome }}</option>{% endfor %}</select></div>
+  <div><label>Responsável</label><select name="responsavel"><option value="">Todos</option>
+    <option value="eu" {{ 'selected' if f.responsavel == 'eu' }}>Eu</option><option value="ninguem" {{ 'selected' if f.responsavel == 'ninguem' }}>Sem responsável</option>
+    {% for t in tecnicos %}<option value="{{ t.id }}" {{ 'selected' if f.responsavel == t.id|string }}>{{ t.nome }}</option>{% endfor %}</select></div>
+  <div><label>Prioridade</label><select name="prioridade"><option value="">Todas</option>
+    {% for p in ['critica','alta','media','baixa'] %}<option value="{{ p }}" {{ 'selected' if f.prioridade == p }}>{{ p|rotulo('prioridade') }}</option>{% endfor %}</select></div>
+  <div style="flex:1;min-width:180px"><label>Buscar</label><input type="text" name="busca" value="{{ f.busca }}" placeholder="Nº ou palavra do título"></div>
+  <button class="btn sec">Filtrar</button>
+</form>
+{{ m.tabela_chamados(lista, 'equipe.chamado') }}
+<p class="muted small">{{ lista|length }} chamado(s).</p>
+{% endblock %}

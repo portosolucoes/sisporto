@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block titulo %}Trocar senha{% endblock %}
+{% block conteudo %}
+<div class="topo"><h1>Trocar senha</h1></div>
+<div class="card" style="max-width:460px">
+<form method="post">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="campo"><label>Senha atual</label><input type="password" name="atual" autocomplete="current-password"></div>
+  <div class="campo"><label>Nova senha</label><input type="password" name="nova" required minlength="10" autocomplete="new-password"><div class="ajuda">Mínimo de 10 caracteres.</div></div>
+  <div class="campo"><label>Confirme a nova senha</label><input type="password" name="confirmacao" required autocomplete="new-password"></div>
+  <button class="btn">Salvar</button>
+</form>
+</div>
+{% endblock %}
