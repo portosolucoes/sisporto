@@ -1,0 +1,65 @@
+# Testa e publica o SisPorto no Google Cloud a cada mudança na branch main.
+name: Testar e publicar
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", "*.zip", "entregas/**"]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: main
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: publicar-sisporto
+  cancel-in-progress: false
+jobs:
+  testes:
+    name: Conferir e testar
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Arquivos conferem com o pacote da versão
+        run: if [ -f MANIFESTO.sha256 ]; then sha256sum --quiet -c MANIFESTO.sha256; fi
+      - run: pip install -r requirements.txt
+      - name: Rotas e telas
+        run: python -m app.verificar
+      - name: Testes automáticos
+        env:
+          TEST_DATABASE_ADMIN: "host=localhost user=postgres password=postgres dbname=postgres"
+          TZ: America/Sao_Paulo
+        run: python -m unittest tests.test_app
+  publicar:
+    name: Publicar no Google Cloud
+    needs: testes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/1119444744/locations/global/workloadIdentityPools/github/providers/sisporto
+          service_account: github-deploy@porto-sisporto-2610.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Publicar (código + atualização do banco)
+        env:
+          SO_ATUALIZAR: "1"
+        run: bash infra/gcp/publicar.sh
