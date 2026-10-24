@@ -9,7 +9,7 @@ permissions:
   contents: write
   id-token: write
 concurrency:
-  group: publicar-sisporto
+  group: entrega-sisporto
   cancel-in-progress: false
 jobs:
   aplicar:
