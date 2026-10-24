@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block titulo %}Criar nova senha{% endblock %}
+{% block publico %}
+<div class="login"><div class="caixa">
+  <div class="marca"><img src="{{ url_for('logo') }}" alt="Porto Soluções Corporativas" style="max-height:72px;max-width:280px"></div>
+  <div class="card">
+    <h2>Criar nova senha</h2>
+    {% include "_avisos.html" %}
+    <p class="muted">Conta: <b>{{ email }}</b></p>
+    <form method="post">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo"><label for="nova">Nova senha</label><input id="nova" type="password" name="nova" required minlength="10" autocomplete="new-password" autofocus><div class="ajuda">Mínimo de 10 caracteres.</div></div>
+      <div class="campo"><label for="confirmacao">Confirme a nova senha</label><input id="confirmacao" type="password" name="confirmacao" required autocomplete="new-password"></div>
+      <button class="btn" style="width:100%">Salvar nova senha</button>
+    </form>
+  </div>
+</div></div>
+{% endblock %}

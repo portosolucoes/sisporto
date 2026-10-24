@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import secrets
 import time
 from urllib.parse import urlencode
@@ -172,3 +173,72 @@ def google_retorno():
         return redirect(url_for("auth.login"))
     _entrar(u)
     return redirect(destino_inicial(u))
+
+
+# --- recuperação de senha ------------------------------------------------------
+VALIDADE_TOKEN_MIN = 60
+MAX_PEDIDOS_HORA = 3
+MSG_RECUPERAR = ("Se o e-mail estiver cadastrado, você receberá em alguns minutos um link para criar uma nova "
+                 "senha. Confira também a caixa de spam.")
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+@bp.route("/recuperar-senha", methods=["GET", "POST"])
+def recuperar_senha():
+    email = (request.values.get("email") or "").strip().lower()
+    if request.method == "POST":
+        if "@" not in email:
+            flash("Digite o seu e-mail para recuperar a senha.", "erro")
+            return render_template("recuperar.html", email=email)
+        u = db().one("SELECT id, nome, email, ativo FROM usuarios WHERE email = %s", [email])
+        if u and u["ativo"]:
+            recentes = db().val("""SELECT count(*) FROM senha_tokens
+                                    WHERE usuario_id = %s AND criado_em > now() - interval '1 hour'""", [u["id"]])
+            if recentes < MAX_PEDIDOS_HORA:
+                token = secrets.token_urlsafe(32)
+                db().run("""INSERT INTO senha_tokens (usuario_id, token_hash, expira_em, ip)
+                            VALUES (%s, %s, now() + make_interval(mins => %s), %s)""",
+                         [u["id"], _hash_token(token), VALIDADE_TOKEN_MIN, request.remote_addr])
+                link = url_for("auth.redefinir_senha", token=token, _external=True)
+                corpo = (f"Olá, {u['nome']}.\n\nRecebemos um pedido para criar uma nova senha no SisPorto.\n"
+                         f"Para continuar, abra o link abaixo (válido por {VALIDADE_TOKEN_MIN} minutos e uso único):\n\n"
+                         f"{link}\n\nSe não foi você, ignore este e-mail: sua senha atual continua valendo.\n\n"
+                         "—\nSuporte Porto Soluções Corporativas")
+                db().run("""INSERT INTO emails_saida (para, assunto, corpo, evento)
+                            VALUES (%s, 'SisPorto – criar nova senha', %s, 'senha')""", [u["email"], corpo])
+        time.sleep(0.3)
+        flash(MSG_RECUPERAR, "ok")
+        return redirect(url_for("auth.login"))
+    return render_template("recuperar.html", email=email)
+
+
+def _token_valido(token):
+    return db().one("""SELECT t.id, t.usuario_id, u.email FROM senha_tokens t JOIN usuarios u ON u.id = t.usuario_id
+                        WHERE t.token_hash = %s AND t.usado_em IS NULL AND t.expira_em > now() AND u.ativo""",
+                    [_hash_token(token)])
+
+
+@bp.route("/redefinir-senha/<token>", methods=["GET", "POST"])
+def redefinir_senha(token):
+    t = _token_valido(token)
+    if not t:
+        flash("Este link de recuperação expirou ou já foi usado. Peça um novo.", "erro")
+        return redirect(url_for("auth.recuperar_senha"))
+    if request.method == "POST":
+        nova = request.form.get("nova") or ""
+        if len(nova) < SENHA_MINIMA:
+            flash(f"A nova senha precisa ter pelo menos {SENHA_MINIMA} caracteres.", "erro")
+        elif nova != (request.form.get("confirmacao") or ""):
+            flash("A confirmação não confere.", "erro")
+        else:
+            db().run("UPDATE usuarios SET senha_hash = %s WHERE id = %s",
+                     [generate_password_hash(nova), t["usuario_id"]])
+            db().run("UPDATE senha_tokens SET usado_em = now() WHERE usuario_id = %s AND usado_em IS NULL",
+                     [t["usuario_id"]])
+            session.clear()
+            flash("Senha alterada. Entre com a nova senha.", "ok")
+            return redirect(url_for("auth.login"))
+    return render_template("redefinir.html", email=t["email"])

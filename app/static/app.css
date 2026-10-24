@@ -118,3 +118,6 @@ dl.ficha dt{color:var(--muted);font-size:13px} dl.ficha dd{margin:0}
   .g2,.g3,.g4,.g-2-1{grid-template-columns:1fr}
   main{padding:18px 16px}
 }
+
+.link-btn{display:block;margin:12px auto 0;background:none;border:0;color:var(--brand-2);font:inherit;font-size:14px;cursor:pointer;padding:4px}
+.link-btn:hover{text-decoration:underline}

@@ -468,3 +468,48 @@ class TestCriarAdmin(Base):
         r = self.app.test_cli_runner().invoke(args=["criar-admin", "maria@alfalog.com.br"])
         u = self.sql("SELECT perfil, cliente_id, ativo FROM usuarios WHERE email = 'maria@alfalog.com.br'")[0]
         self.assertEqual((u["perfil"], u["cliente_id"], u["ativo"]), ("admin", None, True))
+
+
+class TestRecuperarSenha(Base):
+    def test_fluxo_recuperacao(self):
+        c = self.cliente_http()
+        # botão "Esqueci minha senha" envia o e-mail digitado no login
+        r = self.post(c, "/recuperar-senha", {"email": "Joao@ClinicaBeta.com.br", "senha": ""})
+        self.assertEqual(r.status_code, 302)
+        email = self.sql("SELECT * FROM emails_saida WHERE evento = 'senha' ORDER BY id DESC LIMIT 1")[0]
+        self.assertEqual(email["para"], "joao@clinicabeta.com.br")
+        link = re.search(r"(/redefinir-senha/\S+)", email["corpo"]).group(1)
+        self.assertEqual(c.get(link).status_code, 200)
+        r = self.post(c, link, {"nova": "curta", "confirmacao": "curta"})
+        self.assertIn("10 caracteres".encode(), r.data)
+        r = self.post(c, link, {"nova": "NovaSenha-2026!", "confirmacao": "NovaSenha-2026!"})
+        self.assertEqual(r.status_code, 302)
+        c.get("/entrar")
+        r = self.post(c, "/entrar", {"email": "joao@clinicabeta.com.br", "senha": "NovaSenha-2026!"})
+        self.assertEqual(r.headers["Location"], "/portal/")
+        # link não pode ser reutilizado
+        r = c.get(link)
+        self.assertIn("/recuperar-senha", r.headers["Location"])
+
+    def test_email_desconhecido_mesma_resposta(self):
+        c = self.cliente_http()
+        antes = self.sql("SELECT count(*) AS n FROM emails_saida")[0]["n"]
+        r = self.post(c, "/recuperar-senha", {"email": "ninguem@x.com"}, follow_redirects=True)
+        self.assertIn("Se o e-mail estiver cadastrado".encode(), r.data)
+        self.assertEqual(self.sql("SELECT count(*) AS n FROM emails_saida")[0]["n"], antes)
+
+    def test_limite_e_expiracao(self):
+        c = self.cliente_http()
+        for _ in range(5):
+            self.post(c, "/recuperar-senha", {"email": "ana@portosolucoes.com.br"})
+        n = self.sql("""SELECT count(*) AS n FROM senha_tokens t JOIN usuarios u ON u.id = t.usuario_id
+                        WHERE u.email = 'ana@portosolucoes.com.br'""")[0]["n"]
+        self.assertEqual(n, 3)
+        self.sql("UPDATE senha_tokens SET expira_em = now() - interval '1 minute'")
+        corpo = self.sql("SELECT corpo FROM emails_saida WHERE para = 'ana@portosolucoes.com.br' ORDER BY id DESC LIMIT 1")[0]["corpo"]
+        link = re.search(r"(/redefinir-senha/\S+)", corpo).group(1)
+        self.assertIn("/recuperar-senha", c.get(link).headers["Location"])
+
+    def test_login_tem_botao(self):
+        r = self.app.test_client().get("/entrar")
+        self.assertIn("Esqueci minha senha".encode(), r.data)

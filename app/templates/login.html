@@ -15,8 +15,10 @@
       <div class="campo"><label for="email">E-mail</label><input id="email" type="email" name="email" required autocomplete="username" autofocus></div>
       <div class="campo"><label for="senha">Senha</label><input id="senha" type="password" name="senha" required autocomplete="current-password"></div>
       <button class="btn" style="width:100%">Entrar</button>
+      <button class="link-btn" formaction="{{ url_for('auth.recuperar_senha') }}" formnovalidate
+              title="Enviamos um link para o e-mail digitado acima">Esqueci minha senha</button>
     </form>
   </div>
-  <p class="muted small" style="text-align:center">Esqueceu a senha? Fale com o suporte da Porto Soluções.</p>
+  <p class="muted small" style="text-align:center">Esqueceu a senha? Digite seu e-mail acima e clique em "Esqueci minha senha".</p>
 </div></div>
 {% endblock %}
