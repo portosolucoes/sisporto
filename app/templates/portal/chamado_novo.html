@@ -4,7 +4,8 @@
 <div class="topo"><h1>Abrir chamado</h1></div>
 <form method="post" class="card" style="max-width:760px" enctype="multipart/form-data">
   <input type="hidden" name="csrf" value="{{ csrf }}">
-  <div class="campo"><label>Assunto</label><input type="text" name="titulo" value="{{ form.titulo }}" required maxlength="200" placeholder="Ex.: Impressora do financeiro não imprime"></div>
+  <div class="campo"><label>Assunto</label><input type="text" name="titulo" value="{{ form.titulo }}" required maxlength="200" placeholder="Ex.: Impressora do financeiro não imprime" id="titulo-chamado" data-sugestoes="{{ url_for('kb.buscar_json') }}" autocomplete="off"></div>
+  <div class="card sugestoes-kb" id="sugestoes-kb" hidden><b>Talvez isto resolva agora:</b><ul class="lista-simples"></ul></div>
   <div class="campo"><label>Descreva o problema ou pedido</label><textarea name="descricao" required placeholder="O que aconteceu, desde quando, quem é afetado…">{{ form.descricao }}</textarea></div>
   <div class="campo"><label>Urgência</label><select name="prioridade">
     <option value="baixa" {{ 'selected' if form.prioridade == 'baixa' }}>Baixa – dúvida ou solicitação</option>

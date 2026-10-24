@@ -7,6 +7,8 @@ import secrets
 from flask import Flask, abort, g, request, session
 
 from . import db as dbmod
+
+VERSAO = "1.6.1"
 from . import util
 
 
@@ -59,8 +61,15 @@ def create_app(config: dict | None = None) -> Flask:
                 a_aprovar = dbmod.db().val("SELECT count(*) FROM apontamentos WHERE status = 'pendente'") or 0
             except dbmod.DatabaseError:
                 a_aprovar = 0
-        return {"csrf": session.get("csrf", ""), "usuario": u, "pode": pode,
-                "catalogo_relatorios": CATALOGO, "a_aprovar": a_aprovar}
+        extras_pend = 0
+        if u and u["perfil"] == "cliente":
+            try:
+                extras_pend = dbmod.db().val("""SELECT count(*) FROM horas_extras e JOIN contratos ct ON ct.id = e.contrato_id
+                                                 WHERE ct.cliente_id = %s AND e.status = 'pendente'""", [u["cliente_id"]]) or 0
+            except dbmod.DatabaseError:
+                extras_pend = 0
+        return {"csrf": session.get("csrf", ""), "usuario": u, "pode": pode, "versao": VERSAO,
+                "catalogo_relatorios": CATALOGO, "a_aprovar": a_aprovar, "extras_pendentes": extras_pend}
 
     from .auth import bp as auth_bp, carregar_usuario
     from .rotas_equipe import bp as equipe_bp
@@ -72,6 +81,8 @@ def create_app(config: dict | None = None) -> Flask:
     from .rotas_gestao import bp as gestao_bp
     from .rotas_contratos import bp as contratos_bp
     from .rotas_admin import bp as adm_bp
+    from .rotas_extras import bp as extras_bp
+    from .rotas_conhecimento import bp as kb_bp
 
     app.before_request(carregar_usuario)
     app.register_blueprint(auth_bp)
@@ -84,6 +95,8 @@ def create_app(config: dict | None = None) -> Flask:
     app.register_blueprint(gestao_bp)
     app.register_blueprint(contratos_bp)
     app.register_blueprint(adm_bp)
+    app.register_blueprint(extras_bp)
+    app.register_blueprint(kb_bp)
 
     @app.get("/saude")
     def saude():
@@ -104,6 +117,20 @@ def create_app(config: dict | None = None) -> Flask:
             r.headers["Cache-Control"] = "public, max-age=300"
         r.headers["X-Content-Type-Options"] = "nosniff"
         return r
+
+    @app.errorhandler(dbmod.DatabaseError)
+    def _erro_banco(e):
+        """Regras do banco viram aviso amigável (ex.: período de horas fechado)."""
+        from flask import flash, redirect
+        if "PERIODO_FECHADO" in str(e):
+            conn = g.get("db")
+            if conn is not None:
+                conn.rollback()
+            flash("Este período de horas está fechado: lançamentos não podem ser criados, alterados ou excluídos.",
+                  "erro")
+            volta = request.referrer or "/"
+            return redirect(volta if volta.startswith(request.host_url) or volta.startswith("/") else "/")
+        raise e
 
     @app.errorhandler(403)
     def _proibido(e):

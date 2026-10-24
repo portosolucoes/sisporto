@@ -1,5 +1,11 @@
 # SisPorto – histórico de versões
 
+## 1.6.1 — 24/10/2026
+- Correção da publicação da 1.6.0 (pacote incompleto no servidor).
+- **Conferência do pacote**: MANIFESTO.sha256 com a impressão digital de cada arquivo; a publicação para se algum arquivo não bater.
+- **Verificação de rotas e telas no build**: se faltar algum módulo, a imagem não é gerada e a versão anterior continua no ar.
+- **Publicação automática pelo GitHub Actions**: testes com PostgreSQL de verdade + publicação no Cloud Run a cada atualização; entrega por um único zip.
+
 ## 1.6.0 — 24/10/2026
 - **Tickets por responsável**: quem não é administrador vê os chamados sem responsável e os atribuídos a si; os de outros recursos ficam ocultos (lista, painel, tela, anexos, cronômetro).
 - **Avisos de saldo (80% e 100%)** por e-mail ao cliente (e-mail financeiro + usuários marcados "Avisos de saldo") e ao gestor da conta, e no Google Chat. Um aviso por nível e período.

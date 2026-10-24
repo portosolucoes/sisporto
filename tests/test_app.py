@@ -1534,3 +1534,23 @@ class TestVersao16(Base):
         self.sql("UPDATE apontamentos SET minutos = 30 WHERE id = %s", [ap])
         self.assertEqual(self.sql("SELECT minutos FROM apontamentos WHERE id = %s", [ap])[0]["minutos"], 30)
         self.assertEqual(self.cliente_http("ana@portosolucoes.com.br").get("/admin/fechamento").status_code, 403)
+
+
+class TestPacote(unittest.TestCase):
+    def test_rotas_e_telas(self):
+        from app.verificar import verificar
+        self.assertEqual(verificar(), [])
+
+    def test_detecta_rota_faltando(self):
+        """Simula o problema da 1.6.0: tela nova com módulo .py antigo (rota inexistente)."""
+        import pathlib, tempfile
+        from app import create_app
+        from app.verificar import verificar
+        with tempfile.TemporaryDirectory() as d:
+            alvo = pathlib.Path(__file__).resolve().parent.parent / "app" / "templates" / "_teste_rota.html"
+            alvo.write_text("{{ url_for('kb.nao_existe') }}", encoding="utf-8")
+            try:
+                erros = verificar()
+            finally:
+                alvo.unlink()
+        self.assertTrue(any("kb.nao_existe" in e for e in erros))

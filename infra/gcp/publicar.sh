@@ -5,6 +5,7 @@
 #
 #  1ª execução  : bash infra/gcp/publicar.sh            (cria banco, segredos e o serviço ~15 min)
 #  Atualizações : bash infra/gcp/publicar.sh            (só republica o código ~4 min)
+#  Automático   : GitHub Actions (.github/workflows) roda este script com SO_ATUALIZAR=1
 #
 #  Custo: Cloud SQL db-f1-micro (~US$ 12/mês) + disco/backup (~US$ 3) + Cloud Run (cota gratuita)
 # =============================================================================
@@ -19,11 +20,24 @@ SERVICO="sisporto"
 ADMIN_EMAIL="${ADMIN_EMAIL:-contato@portosolucoes.com.br}"
 
 say(){ echo -e "\n\033[1;34m==> $*\033[0m"; }
+cd "$(dirname "$0")/../.."   # raiz do repositório
+
+# --- Conferência do pacote (evita publicar arquivos misturados de versões diferentes) ---
+if [[ -f MANIFESTO.sha256 && "${IGNORAR_MANIFESTO:-}" != "1" ]]; then
+  say "Conferindo os arquivos da versão $(sed -n 's/^VERSAO = "\(.*\)"/\1/p' app/__init__.py)..."
+  if ! sha256sum --quiet -c MANIFESTO.sha256; then
+    echo -e "\n\033[1;31mArquivos diferentes do pacote oficial (listados acima).\033[0m"
+    echo "Provável upload incompleto. Envie o zip da versão de novo (ver infra/COMO-ATUALIZAR.md)."
+    echo "Para publicar mesmo assim: IGNORAR_MANIFESTO=1 bash infra/gcp/publicar.sh"
+    exit 1
+  fi
+fi
 gcloud config set project "$PROJECT_ID" >/dev/null
 PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
 SA_RUN="$PROJECT_NUMBER-compute@developer.gserviceaccount.com"
 CONEXAO="$PROJECT_ID:$REGIAO:$INSTANCIA"
 
+if [[ "${SO_ATUALIZAR:-}" != "1" ]]; then
 say "Ativando APIs..."
 gcloud services enable sqladmin.googleapis.com run.googleapis.com secretmanager.googleapis.com \
   cloudbuild.googleapis.com artifactregistry.googleapis.com
@@ -63,6 +77,13 @@ for S in $LISTA_SEGREDOS; do
 done
 gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$SA_RUN" \
   --role=roles/cloudsql.client --condition=None >/dev/null
+else
+  # modo automático (GitHub Actions): banco e segredos já existem
+  SEGREDOS="DATABASE_URL=sisporto-database-url:latest,SECRET_KEY=sisporto-secret-key:latest,INTEGRACAO_TOKEN=sisporto-integracao-token:latest"
+  if gcloud secrets describe sisporto-google-client-id >/dev/null 2>&1; then
+    SEGREDOS="$SEGREDOS,GOOGLE_CLIENT_ID=sisporto-google-client-id:latest,GOOGLE_CLIENT_SECRET=sisporto-google-client-secret:latest"
+  fi
+fi
 
 # --- Serviço ----------------------------------------------------------------
 say "Publicando o sistema no Cloud Run (máx. 2 instâncias)..."
@@ -87,7 +108,7 @@ say "Criando/atualizando as tabelas do banco..."
 tarefa sisporto-banco "--app,app,banco-atualizar"
 
 GEROU_SENHA=0
-if [[ "${PRIMEIRA_SENHA:-}" == "1" || ! -f "$HOME/.sisporto_admin_ok" ]]; then
+if [[ "${PRIMEIRA_SENHA:-}" == "1" || ( "${SO_ATUALIZAR:-}" != "1" && ! -f "$HOME/.sisporto_admin_ok" ) ]]; then
   GEROU_SENHA=1
   say "Criando/corrigindo o administrador $ADMIN_EMAIL e gerando senha temporária..."
   tarefa sisporto-senha "--app,app,criar-admin,$ADMIN_EMAIL"
@@ -98,7 +119,8 @@ if [[ "${PRIMEIRA_SENHA:-}" == "1" || ! -f "$HOME/.sisporto_admin_ok" ]]; then
 fi
 
 URL=$(gcloud run services describe "$SERVICO" --region="$REGIAO" --format="value(status.url)")
-say "PRONTO!"
+VERSAO=$(sed -n 's/^VERSAO = "\(.*\)"/\1/p' app/__init__.py)
+say "PRONTO! SisPorto $VERSAO publicado."
 echo "Sistema no ar: $URL"
 if [[ "$GEROU_SENHA" == "1" ]]; then
   echo "Entre com $ADMIN_EMAIL e a senha temporária acima, e troque a senha em 'Trocar senha'."
