@@ -1,8 +1,8 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
 {% block titulo %}Abrir chamado{% endblock %}
 {% block conteudo %}
 <div class="topo"><h1>Abrir chamado</h1></div>
-<form method="post" class="card" style="max-width:760px">
+<form method="post" class="card" style="max-width:760px" enctype="multipart/form-data">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <div class="campo"><label>Assunto</label><input type="text" name="titulo" value="{{ form.titulo }}" required maxlength="200" placeholder="Ex.: Impressora do financeiro não imprime"></div>
   <div class="campo"><label>Descreva o problema ou pedido</label><textarea name="descricao" required placeholder="O que aconteceu, desde quando, quem é afetado…">{{ form.descricao }}</textarea></div>
@@ -12,6 +12,7 @@
     <option value="alta" {{ 'selected' if form.prioridade == 'alta' }}>Alta – pessoa ou setor parado</option>
     <option value="critica" {{ 'selected' if form.prioridade == 'critica' }}>Crítica – empresa sem operar</option>
   </select></div>
+  {{ m.campo_anexo() }}
   <button class="btn">Enviar chamado</button>
 </form>
 {% endblock %}

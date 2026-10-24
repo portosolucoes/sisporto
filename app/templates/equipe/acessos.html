@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block titulo %}Acessos por rotina{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><div class="muted small"><a href="{{ url_for('equipe.equipe_lista') }}">Recursos</a></div>
+<h1>Acessos por rotina</h1>
+<div class="muted">Marque o que cada pessoa pode acessar. Administradores têm acesso total. <span class="selo">padrão do perfil</span> indica que a marcação segue o perfil; <span class="selo warn">personalizado</span>, que foi alterada para a pessoa.</div></div></div>
+{% if usuarios %}
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="tabela"><table class="matriz"><thead><tr><th>Rotina</th>
+{% for u in usuarios %}<th class="centro">{{ u.nome.split()[0] }}<div class="muted small" style="text-transform:none;font-weight:400">{{ u.perfil|rotulo('perfil') }}{{ '' if u.ativo else ' · inativo' }}</div></th>{% endfor %}</tr></thead>
+<tbody>{% for r, (desc, _) in rotinas.items() %}<tr><td>{{ desc }}</td>
+{% for u in usuarios %}{% set ok = matriz[u.id][r] %}<td class="centro"><label class="check" style="justify-content:center"><input type="checkbox" name="p_{{ u.id }}_{{ r }}" value="1" {{ 'checked' if ok }} aria-label="{{ desc }} – {{ u.nome }}"></label>
+{% if ok != padroes[u.id][r] %}<span class="selo warn" style="font-size:10px">personalizado</span>{% endif %}</td>{% endfor %}</tr>{% endfor %}
+</tbody></table></div>
+<p style="margin-top:14px"><button class="btn">Salvar acessos</button></p>
+</form>
+{% else %}<div class="card vazio">Cadastre técnicos ou financeiro em <a href="{{ url_for('equipe.equipe_lista') }}">Equipe</a> para definir acessos.</div>{% endif %}
+{% endblock %}

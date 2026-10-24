@@ -42,3 +42,18 @@
 {% endmacro %}
 
 {% macro csrf_input() %}<input type="hidden" name="csrf" value="{{ csrf }}">{% endmacro %}
+
+{% macro campo_anexo() %}
+<div class="campo"><label>Anexo (opcional)</label>
+  <input type="file" name="anexo" accept=".zip,.rar,.7z,.gz,.tgz,.bz2,.xz" data-limite="20971520">
+  <div class="ajuda">Só arquivos compactados (.zip, .rar, .7z), até 20 MB. Arquivo maior: coloque no Google Drive (ou similar) e cole o link na mensagem.</div>
+  <div class="aviso erro anexo-erro" role="alert" hidden></div>
+</div>
+{% endmacro %}
+
+{% macro lista_anexos(anexos) %}
+{% if anexos %}<div class="anexos"><h3>Anexos</h3><ul>
+{% for a in anexos %}<li><a href="{{ url_for('anexos.baixar', anexo_id=a.id) }}">📎 {{ a.nome_arquivo }}</a>{% if a.drive_url and usuario and usuario.perfil != 'cliente' %} <a class="small" href="{{ a.drive_url }}" target="_blank" rel="noopener">(Drive)</a>{% endif %}
+<span class="muted small">{{ (a.tamanho_bytes / 1048576)|round(1) }} MB · {{ a.autor }} · {{ a.criado_em|data_hora }}{% if a.tipo == 'interna' %} · interno{% endif %}</span></li>{% endfor %}
+</ul></div>{% endif %}
+{% endmacro %}

@@ -3,7 +3,7 @@
 {% block conteudo %}
 <div class="topo">
   <div><div class="muted small"><a href="{{ url_for('equipe.clientes') }}">Clientes</a></div><h1>{{ c.nome_fantasia or c.razao_social }}</h1>
-  <div class="muted">{{ c.razao_social }} · {{ c.cnpj|cnpj }}</div></div>
+  <div class="muted">{{ c.razao_social }} · {{ c.cnpj|cnpj }}{% if c.segmento %} · {{ c.segmento }}{% endif %}{% if c.cidade %} · {{ c.cidade }}/{{ c.uf }}{% endif %}{% if responsavel %} · Responsável: {{ responsavel }}{% endif %}</div></div>
   <a class="btn" href="{{ url_for('equipe.chamados', cliente=c.id) }}">Chamados do cliente</a>
 </div>
 <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Contratos</h2>
@@ -25,9 +25,9 @@
   </tr>{% endfor %}</tbody></table>{% else %}<div class="vazio">Nenhum contrato. Cadastre o contrato para os prazos e horas funcionarem.</div>{% endif %}</div>
 </div>
 <div class="grid g2">
-  <div class="card"><h2>Contatos com acesso ao portal</h2>
+  <div class="card"><h2>Usuários do cliente (portal)</h2>
     <div class="tabela" style="margin-bottom:12px">{% if contatos %}<table><tbody>{% for u in contatos %}<tr>
-      <td>{{ u.nome }}<div class="muted small">{{ u.email }}</div></td>
+      <td><b>{{ u.codigo }}</b> · <a href="{{ url_for('equipe.usuario_editar', usuario_id=u.id) }}">{{ u.nome }}</a>{% if u.recebe_nps %} <span class="selo">NPS</span>{% endif %}<div class="muted small">{{ u.email }}{% if u.cargo %} · {{ u.cargo }}{% endif %}</div></td>
       <td>{% if u.ativo %}<span class="selo ok">Ativo</span>{% else %}<span class="selo">Inativo</span>{% endif %}</td>
       <td style="white-space:nowrap">
         <form method="post" action="{{ url_for('equipe.usuario_atualizar', usuario_id=u.id) }}" style="display:inline">{{ m.csrf_input() }}<input type="hidden" name="acao" value="senha"><button class="btn sec peq">Nova senha</button></form>
@@ -36,7 +36,9 @@
     <form method="post" action="{{ url_for('equipe.contato_novo', cliente_id=c.id) }}" class="linha">{{ m.csrf_input() }}
       <div style="flex:1;min-width:140px"><label>Nome</label><input type="text" name="nome" required></div>
       <div style="flex:1;min-width:180px"><label>E-mail</label><input type="email" name="email" required></div>
-      <button class="btn">Criar acesso</button></form>
+      <div style="flex:1;min-width:120px"><label>Cargo</label><input type="text" name="cargo"></div>
+      <label class="check"><input type="checkbox" name="recebe_nps" value="1"> Recebe NPS</label>
+      <button class="btn">Criar usuário</button></form>
   </div>
   <div class="card"><h2>Horas por mês</h2>
     <div class="tabela">{% if horas_mes %}<table><thead><tr><th>Mês</th><th>Contrato</th><th class="num">Total</th><th class="num">Faturável aprovado</th><th class="num">Pendente</th></tr></thead><tbody>

@@ -1,0 +1,34 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}Integrações{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Integrações</h1><div class="muted">Google Chat, NPS e o status do script do Google (e-mails, Agenda, Drive e planilha de BI).</div></div></div>
+<div class="grid g2">
+  <form method="post" class="card">{{ m.csrf_input() }}
+    <h2>Google Chat – alertas da equipe</h2>
+    <p class="muted small">Avisa no espaço do Chat quando entra um chamado <b>crítico</b>, quando um prazo entra em <b>risco</b> e quando <b>estoura</b>.</p>
+    <p>{% if d.chat_configurado %}<span class="selo ok">Configurado</span> <span class="muted small">(…{{ d.chat_final }})</span>{% else %}<span class="selo">Não configurado</span>{% endif %}</p>
+    <div class="campo"><label>Endereço do webhook</label><input type="password" name="chat_webhook" placeholder="https://chat.googleapis.com/v1/spaces/…" autocomplete="off">
+      <div class="ajuda">No Chat: abra o espaço → nome do espaço → Apps e integrações → Webhooks → Adicionar → copie a URL. Deixe vazio e salve para desligar.</div></div>
+    <button class="btn" name="acao" value="chat">Salvar</button>
+    {% if d.chat_configurado %}<button class="btn sec" name="acao" value="chat_teste" formnovalidate>Enviar teste</button>{% endif %}
+  </form>
+  <form method="post" class="card">{{ m.csrf_input() }}
+    <h2>Pesquisa NPS mensal</h2>
+    <p class="muted small">Enviada por e-mail, uma vez por mês, aos usuários de clientes marcados com "Recebe NPS" ({{ d.nps_usuarios }} hoje).</p>
+    <div class="campo"><label class="check"><input type="checkbox" name="nps_ativo" value="1" {{ 'checked' if d.nps_ativo }}> Enviar NPS automaticamente</label></div>
+    <div class="campo" style="max-width:200px"><label>Dia do mês para envio</label><input type="number" name="nps_dia" min="1" max="28" value="{{ d.nps_dia }}"></div>
+    <button class="btn" name="acao" value="nps">Salvar</button>
+    <button class="btn sec" name="acao" value="nps_agora" formnovalidate>Enviar a pesquisa deste mês agora</button>
+  </form>
+</div>
+<div class="card"><h2>Script do Google (conta suporte@)</h2>
+  <p class="muted small">Roda a cada 5 minutos: lê e-mails, envia notificações, cria eventos na Agenda, copia anexos para o Drive, atualiza a planilha de BI e dispara alertas/NPS.</p>
+  <dl class="ficha">
+    <dt>E-mails na fila</dt><dd>{{ d.fila }}</dd>
+    <dt>Último envio</dt><dd>{{ d.ultimo_envio|data_hora }}</dd>
+    <dt>Agendamentos aguardando a Agenda</dt><dd>{{ d.agenda_pendentes }}</dd>
+    <dt>Anexos aguardando o Drive</dt><dd>{{ d.drive_pendentes }}</dd>
+  </dl>
+  <p class="muted small" style="margin-top:10px">Se a fila não diminuir, o script não está rodando. Veja infra/gmail/LEIA-ME.md.</p>
+</div>
+{% endblock %}

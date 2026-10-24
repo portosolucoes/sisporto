@@ -24,7 +24,7 @@ COLUNAS = {
                  ("Telefone", 16), ("Domínio de e-mail", 22), ("Endereço", 40)],
     "Contratos": [("Cliente* (CNPJ ou nome fantasia)", 30), ("Tipo*", 18), ("Descrição*", 30),
                   ("Valor mensal (R$)", 16), ("Franquia de horas/mês", 18), ("Valor da hora (R$)", 16),
-                  ("Horas do pacote", 15), ("Valor total (R$)", 16), ("Início*", 13), ("Fim", 13),
+                  ("Horas liberadas", 15), ("Valor total (R$)", 16), ("Início*", 13), ("Fim", 13),
                   ("Dia de vencimento", 16), ("Índice de reajuste", 16), ("Mês do reajuste", 15)],
     "Contatos": [("Cliente* (CNPJ ou nome fantasia)", 30), ("Nome*", 26), ("E-mail*", 32), ("Telefone", 16)],
 }
@@ -45,9 +45,9 @@ INSTRUCOES = [
     "4. Contratos: na coluna Cliente use o CNPJ ou o nome fantasia exatamente como na aba Clientes.",
     "5. Tipo: Mensal fixo, Banco de horas, Hora avulsa, Projeto ou Proposta avulsa (lista na célula).",
     "   • Mensal fixo → Valor mensal (franquia e valor da hora excedente são opcionais)",
-    "   • Banco de horas → Horas do pacote (e valor da hora, se quiser)",
+    "   • Banco de horas → Horas liberadas (e valor da hora, se quiser)",
     "   • Hora avulsa → Valor da hora",
-    "   • Projeto / Proposta avulsa → Valor total",
+    "   • Projeto / Proposta avulsa → Valor total (Horas liberadas opcional, para controlar o saldo)",
     "6. Datas no formato dd/mm/aaaa.",
     "7. Contatos: pessoas do cliente que terão acesso ao portal. Cada uma recebe uma senha temporária",
     "   mostrada ao final da importação — envie a cada contato.",
@@ -204,7 +204,7 @@ def importar(conteudo: bytes):
                  "mes_reajuste": _int(r[12])}
             if not v["data_inicio"]:
                 raise ValueError("falta a data de início")
-            obrig = {"mensal_fixo": ("valor_mensal", "Valor mensal"), "banco_horas": ("horas_pacote", "Horas do pacote"),
+            obrig = {"mensal_fixo": ("valor_mensal", "Valor mensal"), "banco_horas": ("horas_pacote", "Horas liberadas"),
                      "hora_avulsa": ("valor_hora", "Valor da hora"), "projeto": ("valor_total", "Valor total"),
                      "proposta_avulsa": ("valor_total", "Valor total")}[tipo]
             if v[obrig[0]] is None:
@@ -226,9 +226,12 @@ def importar(conteudo: bytes):
             erros.append(f"Contatos, linha {n}: cliente '{r[0]}' não encontrado."); continue
         if not nome or "@" not in email:
             erros.append(f"Contatos, linha {n}: informe nome e e-mail."); continue
-        if email in emails or db().val("SELECT 1 FROM usuarios WHERE email = %s", [email]):
-            erros.append(f"Contatos, linha {n}: e-mail {email} já existe."); continue
-        emails.add(email)
+        chave = (cli, email)
+        ja = cli[0] == "existe" and db().val(
+            "SELECT 1 FROM usuarios WHERE email = %s AND cliente_id = %s AND perfil = 'cliente'", [email, cli[1]])
+        if chave in emails or ja:
+            erros.append(f"Contatos, linha {n}: {email} já é usuário deste cliente."); continue
+        emails.add(chave)
         contatos.append({"cli": cli, "nome": nome, "email": email, "tel": _txt(r[3])})
 
     if erros:

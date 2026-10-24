@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block titulo %}Verificação em duas etapas{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Verificação em duas etapas (2FA)</h1><div class="muted">Além da senha, o login pede um código do seu celular. Protege a conta mesmo se a senha vazar.</div></div></div>
+<div class="card" style="max-width:640px">
+{% if ativo %}
+  <p><span class="selo ok">Ativa</span> O login pede o código do app autenticador.</p>
+  <form method="post"><input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="campo" style="max-width:220px"><label>Para desativar, digite o código atual</label><input type="text" name="codigo" inputmode="numeric" maxlength="7" required></div>
+    <button class="btn perigo">Desativar 2FA</button></form>
+{% else %}
+  <ol>
+    <li>Instale no celular o <b>Google Authenticator</b> (ou Microsoft Authenticator).</li>
+    <li>No app, toque em <b>+</b> e <b>leia o QR code</b> abaixo{% if not qr %} (ou use a chave){% endif %}.</li>
+    <li>Digite o código de 6 dígitos que aparecer no app.</li>
+  </ol>
+  {% if qr %}<div style="text-align:center;margin:12px 0">{{ qr|safe }}</div>{% endif %}
+  <p class="small">Chave para digitar no app: <code style="font-size:15px">{{ segredo }}</code><br>
+  No celular, você também pode <a href="{{ uri }}">tocar aqui para abrir o app</a>.</p>
+  <form method="post"><input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="campo" style="max-width:220px"><label>Código do app</label><input type="text" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required></div>
+    <button class="btn">Ativar 2FA</button></form>
+{% endif %}
+</div>
+{% endblock %}

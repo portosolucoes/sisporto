@@ -12,7 +12,7 @@
     {% endif %}
     <form method="post">
       <input type="hidden" name="csrf" value="{{ csrf }}">
-      <div class="campo"><label for="email">E-mail</label><input id="email" type="email" name="email" required autocomplete="username" autofocus></div>
+      <div class="campo"><label for="email">Código de usuário ou e-mail</label><input id="email" type="text" name="email" required autocomplete="username" autofocus autocapitalize="none" spellcheck="false"></div>
       <div class="campo"><label for="senha">Senha</label><input id="senha" type="password" name="senha" required autocomplete="current-password"></div>
       <button class="btn" style="width:100%">Entrar</button>
       <button class="link-btn" formaction="{{ url_for('auth.recuperar_senha') }}" formnovalidate

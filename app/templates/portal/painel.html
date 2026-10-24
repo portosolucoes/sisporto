@@ -11,7 +11,7 @@
 <div class="grid g2">
   <div>
   {% for b in bancos %}
-    <div class="card"><h2>Banco de horas · {{ b.descricao }}</h2>
+    <div class="card"><h2>Horas liberadas · {{ b.descricao }}</h2>
       {% set pct = [b.pct_consumido|float, 100]|min %}
       <div style="display:flex;justify-content:space-between"><b>{{ b.horas_saldo|horas_dec }} restantes</b><span class="muted">de {{ b.horas_pacote|horas_dec }}</span></div>
       <div class="barra {{ 'bad' if pct >= 100 else 'warn' if pct >= 80 }}"><span style="width:{{ pct }}%"></span></div>
@@ -27,6 +27,12 @@
       {% if f.horas_excedentes and f.horas_excedentes > 0 %}<div class="small" style="color:var(--bad)">{{ f.horas_excedentes|horas_dec }} acima da franquia neste mês</div>{% else %}<div class="muted small">Considera horas já aprovadas.</div>{% endif %}
     </div>
   {% endfor %}
+    <div class="card"><h2>Horas do mês por tipo de serviço</h2>
+      {% if por_tipo %}{% set maior = por_tipo|map(attribute='minutos')|max %}
+      {% for t in por_tipo %}<div class="linha-tipo"><div class="rot"><span>{{ t.tipo }}</span><b>{{ t.minutos|horas }}</b></div>
+        <div class="barra"><span style="width:{{ (t.minutos / maior * 100)|round(1) }}%"></span></div></div>{% endfor %}
+      {% else %}<div class="vazio">Nenhuma hora registrada neste mês.</div>{% endif %}
+    </div>
     <div class="card"><h2>Horas por mês</h2>
       {% if historico %}{% set maior = historico|map(attribute='minutos')|max %}
       <div class="colunas">{% for h in historico %}<div class="c {{ 'atual' if h.mes == mes }}"><span class="v">{{ h.minutos|horas }}</span><i style="height:{{ (h.minutos / maior * 100) if maior else 0 }}%"></i><small>{{ h.mes.strftime('%m/%y') }}</small></div>{% endfor %}</div>

@@ -7,8 +7,14 @@
 </head>
 <body>
 {% if usuario %}
+<header class="topbar">
+  <button type="button" class="menu-btn" aria-label="Abrir menu" aria-controls="menu" aria-expanded="false">
+    <span></span><span></span><span></span></button>
+  <img src="{{ url_for('logo') }}" alt="Porto Soluções Corporativas">
+</header>
+<div class="sombra" hidden></div>
 <div class="app">
-  <aside class="side">
+  <aside class="side" id="menu">
     <div class="marca-logo"><img src="{{ url_for('logo') }}" alt="Porto Soluções Corporativas"></div>
     <nav>
       {% set ep = request.endpoint or '' %}
@@ -19,22 +25,32 @@
         <a href="{{ url_for('portal.horas') }}" class="{{ 'ativo' if ep == 'portal.horas' }}">Relatório de horas</a>
       {% else %}
         <a href="{{ url_for('equipe.painel') }}" class="{{ 'ativo' if ep == 'equipe.painel' }}">Painel</a>
-        <a href="{{ url_for('equipe.chamados') }}" class="{{ 'ativo' if ep.startswith('equipe.chamado') }}">Chamados</a>
-        <a href="{{ url_for('equipe.horas') }}" class="{{ 'ativo' if ep.startswith('equipe.hora') }}">Horas</a>
-        <a href="{{ url_for('equipe.emails_recusados') }}" class="{{ 'ativo' if ep == 'equipe.emails_recusados' }}">E-mails não processados</a>
-        <div class="sec">Cadastros</div>
-        <a href="{{ url_for('equipe.clientes') }}" class="{{ 'ativo' if ep.startswith('equipe.cliente') or ep.startswith('equipe.contrato') }}">Clientes e contratos</a>
+        {% if pode('chamados') %}<a href="{{ url_for('equipe.chamados') }}" class="{{ 'ativo' if ep.startswith('equipe.chamado') }}">Chamados</a>{% endif %}
+        {% if pode('horas') or pode('aprovar_horas') %}<a href="{{ url_for('equipe.horas') }}" class="{{ 'ativo' if ep.startswith('equipe.hora') }}">Horas</a>{% endif %}
         {% if usuario.perfil == 'admin' %}
-        <a href="{{ url_for('equipe.equipe_lista') }}" class="{{ 'ativo' if ep == 'equipe.equipe_lista' }}">Equipe</a>
+        <a href="{{ url_for('gestao.apontamentos') }}" class="{{ 'ativo' if ep.startswith('gestao.apontamento') }}">Apontamentos (admin)</a>
+        <a href="{{ url_for('gestao.saldos') }}" class="{{ 'ativo' if ep == 'gestao.saldos' }}">Saldos de horas</a>
+        {% endif %}
+        {% if pode('relatorios') %}<a href="{{ url_for('relatorios.indice') }}" class="{{ 'ativo' if ep.startswith('relatorios.') }}">📊 Relatórios</a>{% endif %}
+        {% if pode('emails') %}<a href="{{ url_for('equipe.emails_recusados') }}" class="{{ 'ativo' if ep == 'equipe.emails_recusados' }}">E-mails não processados</a>{% endif %}
+        <div class="sec">Cadastros</div>
+        <a href="{{ url_for('equipe.clientes') }}" class="{{ 'ativo' if ep.startswith('equipe.cliente') or ep.startswith('equipe.contrato') or ep.startswith('equipe.importar') }}">Clientes e contratos</a>
+        {% if pode('clientes') %}<a href="{{ url_for('equipe.usuarios_clientes') }}" class="{{ 'ativo' if ep == 'equipe.usuarios_clientes' }}">Usuários de clientes</a>{% endif %}
+        {% if pode('equipe') %}<a href="{{ url_for('equipe.equipe_lista') }}" class="{{ 'ativo' if ep in ('equipe.equipe_lista', 'equipe.acessos') }}">Recursos e acessos</a>{% endif %}
+        {% if pode('config') %}
+        <div class="sec">Configurações</div>
         <a href="{{ url_for('equipe.config_sla') }}" class="{{ 'ativo' if ep == 'equipe.config_sla' }}">Prazos (SLA)</a>
+        <a href="{{ url_for('equipe.tipos_servico') }}" class="{{ 'ativo' if ep == 'equipe.tipos_servico' }}">Tipos de serviço</a>
+        <a href="{{ url_for('equipe.config_integracoes') }}" class="{{ 'ativo' if ep == 'equipe.config_integracoes' }}">Integrações</a>
         <a href="{{ url_for('equipe.config_marca') }}" class="{{ 'ativo' if ep == 'equipe.config_marca' }}">Logo da empresa</a>
         {% endif %}
       {% endif %}
     </nav>
     <div class="quem">
-      <div style="color:#fff">{{ usuario.nome }}</div>
+      <div style="color:#fff">{{ usuario.nome }} <span style="color:#8394ad">· {{ usuario.codigo }}</span></div>
       <div>{{ usuario.perfil|rotulo('perfil') }}</div>
       <a href="{{ url_for('auth.trocar_senha') }}" style="color:#9fb3cf">Trocar senha</a>
+      {% if usuario.perfil != 'cliente' %}<br><a href="{{ url_for('auth.conta_2fa') }}" style="color:#9fb3cf">Verificação em 2 etapas</a>{% endif %}
       <form method="post" action="{{ url_for('auth.sair') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Sair</button></form>
     </div>
   </aside>

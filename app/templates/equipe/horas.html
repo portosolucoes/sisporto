@@ -3,16 +3,29 @@
 {% block conteudo %}
 <div class="topo"><div><h1>Minhas horas</h1><div class="muted">Semana de {{ inicio|data }} a {{ fim|data }}</div></div>
 <div><a class="btn sec peq" href="{{ url_for('equipe.horas', semana=anterior.isoformat()) }}">← Semana anterior</a> <a class="btn sec peq" href="{{ url_for('equipe.horas', semana=proxima.isoformat()) }}">Próxima →</a></div></div>
-<div class="tabela" style="margin-bottom:8px">{% if minhas %}<table><thead><tr><th>Data</th><th>Chamado</th><th>Cliente</th><th>O que foi feito</th><th class="num">Tempo</th><th>Status</th></tr></thead><tbody>
-{% for a in minhas %}<tr><td>{{ a.data|data }}</td><td>{% if a.numero %}<a href="{{ url_for('equipe.chamado', numero=a.numero) }}">#{{ a.numero }}</a>{% endif %}</td><td>{{ a.cliente or '—' }}</td><td>{{ a.descricao }}{% if not a.faturavel %} <span class="muted small">(não faturável)</span>{% endif %}</td><td class="num">{{ a.minutos|horas }}</td><td>{{ m.selo(a.status,'apontamento') }}</td></tr>{% endfor %}
+{% if pode('horas') %}
+<details class="card" id="lancar"><summary><b>+ Lançar horas em contrato</b> <span class="muted small">(projeto ou suporte, sem chamado)</span></summary>
+<form method="post" action="{{ url_for('equipe.horas_lancar') }}" class="linha" style="margin-top:12px">{{ m.csrf_input() }}
+  <div style="flex:1;min-width:180px"><label for="cliente_id">Cliente</label><select id="cliente_id" required><option value="">Escolha…</option>{% for c in clientes %}<option value="{{ c.id }}">{{ c.nome }}</option>{% endfor %}</select></div>
+  <div style="flex:1;min-width:200px"><label for="contrato_id">Contrato</label><select id="contrato_id" name="contrato_id" required><option value="">Escolha o cliente…</option>{% for ct in contratos %}<option value="{{ ct.id }}" data-cliente="{{ ct.cliente_id }}">{{ ct.descricao }} ({{ ct.tipo|rotulo('tipo_contrato') }})</option>{% endfor %}</select></div>
+  <div style="width:170px"><label>Tipo de serviço</label><select name="tipo_servico_id" required>{% for t in tipos %}<option value="{{ t.id }}">{{ t.nome }}</option>{% endfor %}</select></div>
+  <div><label>Data</label><input type="date" name="data" value="{{ hoje.isoformat() }}" max="{{ hoje.isoformat() }}" required></div>
+  <div style="width:100px"><label>Duração</label><input type="text" name="duracao" placeholder="1:30" required></div>
+  <div style="flex:2;min-width:220px"><label>O que foi feito</label><input type="text" name="descricao" required></div>
+  <label class="check"><input type="checkbox" name="faturavel" value="1" checked> Faturável</label>
+  <button class="btn">Lançar</button>
+</form></details>
+{% endif %}
+<div class="tabela" style="margin-bottom:8px">{% if minhas %}<table><thead><tr><th>Data</th><th>Chamado / contrato</th><th>Cliente</th><th>Tipo</th><th>O que foi feito</th><th class="num">Tempo</th><th>Status</th></tr></thead><tbody>
+{% for a in minhas %}<tr><td>{{ a.data|data }}</td><td>{% if a.numero %}<a href="{{ url_for('equipe.chamado', numero=a.numero) }}">#{{ a.numero }}</a>{% else %}<span class="small">{{ a.contrato or '—' }}</span>{% endif %}</td><td>{{ a.cliente or '—' }}</td><td class="small">{{ a.tipo_servico or '—' }}</td><td>{{ a.descricao }}{% if not a.faturavel %} <span class="muted small">(não faturável)</span>{% endif %}</td><td class="num">{{ a.minutos|horas }}</td><td>{{ m.selo(a.status,'apontamento') }}{% if a.status == 'pendente' or usuario.perfil == 'admin' %} <a class="small" href="{{ url_for('gestao.apontamento_proprio', ap_id=a.id) }}">editar</a>{% endif %}</td></tr>{% endfor %}
 </tbody></table>{% else %}<div class="vazio">Nenhuma hora nesta semana. Lance as horas dentro de cada chamado.</div>{% endif %}</div>
 <p class="muted">Total da semana: <b>{{ minhas|sum(attribute='minutos')|horas }}</b></p>
 
-{% if usuario.perfil == 'admin' %}
+{% if pode('aprovar_horas') %}
 <h2 id="aprovar" style="margin-top:28px">Aprovação de horas</h2>
 <form method="post" action="{{ url_for('equipe.horas_aprovar') }}">{{ m.csrf_input() }}
-<div class="tabela" style="margin-bottom:12px">{% if pendentes %}<table><thead><tr><th><input type="checkbox" id="marcar-todos" aria-label="Marcar todos"></th><th>Data</th><th>Técnico</th><th>Cliente</th><th>Chamado</th><th>O que foi feito</th><th class="num">Tempo</th><th>Faturável</th></tr></thead><tbody>
-{% for a in pendentes %}<tr><td><input type="checkbox" name="ids" value="{{ a.id }}" aria-label="Selecionar"></td><td>{{ a.data|data }}</td><td>{{ a.tecnico }}</td><td>{{ a.cliente or '—' }}</td><td>{% if a.numero %}<a href="{{ url_for('equipe.chamado', numero=a.numero) }}">#{{ a.numero }}</a>{% endif %}</td><td>{{ a.descricao }}</td><td class="num">{{ a.minutos|horas }}</td><td>{{ 'Sim' if a.faturavel else 'Não' }}</td></tr>{% endfor %}
+<div class="tabela" style="margin-bottom:12px">{% if pendentes %}<table><thead><tr><th><input type="checkbox" id="marcar-todos" aria-label="Marcar todos"></th><th>Data</th><th>Recurso</th><th>Cliente</th><th>Chamado</th><th>Tipo</th><th>O que foi feito</th><th class="num">Tempo</th><th>Faturável</th></tr></thead><tbody>
+{% for a in pendentes %}<tr><td><input type="checkbox" name="ids" value="{{ a.id }}" aria-label="Selecionar"></td><td>{{ a.data|data }}</td><td>{{ a.tecnico }}</td><td>{{ a.cliente or '—' }}</td><td>{% if a.numero %}<a href="{{ url_for('equipe.chamado', numero=a.numero) }}">#{{ a.numero }}</a>{% else %}—{% endif %}</td><td class="small">{{ a.tipo_servico or '—' }}</td><td>{{ a.descricao }}</td><td class="num">{{ a.minutos|horas }}</td><td>{{ 'Sim' if a.faturavel else 'Não' }}</td></tr>{% endfor %}
 </tbody></table>{% else %}<div class="vazio">Nenhum lançamento pendente.</div>{% endif %}</div>
 {% if pendentes %}<button class="btn" name="acao" value="aprovado">Aprovar selecionados</button> <button class="btn perigo" name="acao" value="rejeitado">Rejeitar</button>{% endif %}
 </form>

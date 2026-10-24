@@ -1,0 +1,36 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}Saldos de horas{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Saldos de horas</h1><div class="muted">Horas liberadas por contrato/projeto e rateio entre os chamados. O cronômetro e os lançamentos respeitam esses limites.</div></div></div>
+<div class="tabela">{% if contratos %}<table><thead><tr><th>Cliente</th><th>Contrato / projeto</th><th>Tipo</th><th class="num">Liberadas</th><th class="num">Alocadas</th><th class="num">Consumido</th><th class="num">Saldo</th><th></th></tr></thead><tbody>
+{% for ct in contratos %}{% set saldo = (ct.horas_pacote * 60 - ct.consumido) if ct.horas_pacote is not none else none %}
+<tr class="{{ 'sel' if sel == ct.id }}"><td>{{ ct.cliente }}</td><td>{{ ct.descricao }} <span class="muted small">{{ ct.tipo|rotulo('tipo_contrato') }}</span></td><td class="small">{{ ct.tipo_servico or '—' }}</td>
+<td class="num">{{ ct.horas_pacote|horas_dec if ct.horas_pacote is not none else 'sem limite' }}</td><td class="num">{{ ct.alocadas|horas_dec if ct.alocadas else '—' }}</td><td class="num">{{ ct.consumido|horas }}</td>
+<td class="num {{ 'erro-txt' if saldo is not none and saldo <= 0 }}">{{ saldo|int|horas if saldo is not none else '—' }}</td>
+<td><a class="btn sec peq" href="{{ url_for('gestao.saldos', contrato=ct.id) }}#rateio">Gerenciar</a></td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="vazio">Nenhum contrato ativo.</div>{% endif %}</div>
+
+{% for ct in contratos if ct.id == sel %}
+<div class="card" id="rateio" style="margin-top:20px"><h2>{{ ct.cliente }} – {{ ct.descricao }}</h2>
+<form method="post" class="linha">{{ m.csrf_input() }}<input type="hidden" name="acao" value="contrato"><input type="hidden" name="contrato_id" value="{{ ct.id }}">
+  <div style="width:160px"><label>Horas liberadas</label><input type="text" name="horas_pacote" value="{{ ('%g'|format(ct.horas_pacote|float))|replace('.', ',') if ct.horas_pacote is not none else '' }}" placeholder="vazio = sem limite"></div>
+  <div style="width:200px"><label>Tipo do projeto</label><select name="tipo_servico_id"><option value="">—</option>{% for t in tipos %}<option value="{{ t.id }}" {{ 'selected' if ct.tipo_servico_id == t.id }}>{{ t.nome }}</option>{% endfor %}</select></div>
+  <button class="btn sec">Salvar contrato</button>
+</form>
+<h3 style="margin-top:20px">Rateio entre chamados</h3>
+<p class="muted small">Chamado com horas alocadas só pode consumir o que foi alocado. Sem alocação, usa o saldo livre do contrato (descontadas as reservas dos demais). Deixe as horas vazias para remover a alocação.</p>
+<form method="post" class="linha">{{ m.csrf_input() }}<input type="hidden" name="acao" value="alocar"><input type="hidden" name="contrato_id" value="{{ ct.id }}">
+  <div style="width:140px"><label>Chamado nº</label><input type="text" name="chamado" inputmode="numeric" required></div>
+  <div style="width:140px"><label>Horas</label><input type="text" name="horas" placeholder="ex.: 8 ou 2,5"></div>
+  <button class="btn">Alocar</button>
+</form>
+<div class="tabela" style="margin-top:12px">{% if chamados %}<table><thead><tr><th>Chamado</th><th>Título</th><th>Status</th><th class="num">Alocadas</th><th class="num">Apontado</th><th class="num">Restante</th><th>Alterar alocação</th></tr></thead><tbody>
+{% for c in chamados %}<tr><td><a href="{{ url_for('equipe.chamado', numero=c.numero) }}">#{{ c.numero }}</a></td><td>{{ c.titulo }}</td><td>{{ m.selo(c.status,'status') }}</td>
+<td class="num">{{ c.horas_alocadas|horas_dec if c.horas_alocadas is not none else '—' }}</td><td class="num">{{ c.usado|horas }}</td>
+<td class="num">{% if c.horas_alocadas is not none %}{% set r = (c.horas_alocadas * 60 - c.usado)|int %}<span class="{{ 'erro-txt' if r <= 0 }}">{{ r|horas }}</span>{% else %}—{% endif %}</td>
+<td><form method="post" class="linha" style="gap:6px">{{ m.csrf_input() }}<input type="hidden" name="acao" value="alocar"><input type="hidden" name="contrato_id" value="{{ ct.id }}"><input type="hidden" name="chamado" value="{{ c.numero }}">
+<input type="text" name="horas" value="{{ ('%g'|format(c.horas_alocadas|float))|replace('.', ',') if c.horas_alocadas is not none else '' }}" style="width:80px" aria-label="Horas"><button class="btn sec peq">OK</button></form></td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="vazio">Nenhum chamado vinculado a este contrato.</div>{% endif %}</div>
+</div>
+{% endfor %}
+{% endblock %}

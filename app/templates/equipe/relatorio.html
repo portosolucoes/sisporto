@@ -1,0 +1,35 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}{{ item[1] }}{% endblock %}
+{% macro fmt(v, f) -%}
+{%- if v is none -%}—
+{%- elif f == 'horas' -%}{{ v|horas }}
+{%- elif f == 'moeda' -%}{{ v|moeda }}
+{%- elif f == 'pct' -%}{{ v }}%
+{%- elif f == 'data' -%}{{ v|data }}
+{%- elif f == 'prioridade' -%}{{ m.selo(v, 'prioridade') }}
+{%- else -%}{{ v }}{%- endif -%}
+{%- endmacro %}
+{% block conteudo %}
+<div class="topo"><div><div class="muted small"><a href="{{ url_for('relatorios.indice') }}">Relatórios</a></div><h1>{{ item[1] }}</h1><div class="muted">{{ item[2] }}</div></div>
+<a class="btn sec" href="{{ request.full_path }}{{ '&' if '?' in request.full_path else '?' }}formato=xlsx">Exportar Excel</a></div>
+<form class="linha card" method="get">
+  {% if chave == 'prefaturamento' %}
+  <div><label>Mês</label><input type="month" name="mes" value="{{ dados.mes.strftime('%Y-%m') }}"></div>
+  {% else %}
+  <div><label>De</label><input type="date" name="de" value="{{ de.isoformat() }}"></div>
+  <div><label>Até</label><input type="date" name="ate" value="{{ ate.isoformat() }}"></div>
+  {% endif %}
+  <div style="flex:1;min-width:200px"><label>Cliente</label><select name="cliente"><option value="">Todos</option>{% for c in clientes %}<option value="{{ c.id }}" {{ 'selected' if cliente == c.id }}>{{ c.nome }}</option>{% endfor %}</select></div>
+  <button class="btn">Atualizar</button>
+</form>
+<div class="grid g4" style="margin-bottom:18px">
+{% for rot, val, f in dados.cards %}<div class="kpi"><div class="l">{{ rot }}</div><div class="n">{{ fmt(val, f) }}</div></div>{% endfor %}
+</div>
+{% if dados.nota %}<p class="muted small">{{ dados.nota }}</p>{% endif %}
+{% for t in dados.tabelas %}
+<h2 style="margin-top:20px">{{ t.titulo }}</h2>
+<div class="tabela">{% if t.linhas %}<table><thead><tr>{% for k, rot, f in t.colunas %}<th class="{{ 'num' if f in ('horas','moeda','pct','num') }}">{{ rot }}</th>{% endfor %}</tr></thead><tbody>
+{% for l in t.linhas %}<tr>{% for k, rot, f in t.colunas %}<td class="{{ 'num' if f in ('horas','moeda','pct','num') }}">{{ fmt(l[k], f) }}</td>{% endfor %}</tr>{% endfor %}
+</tbody></table>{% else %}<div class="vazio">Sem dados no período.</div>{% endif %}</div>
+{% endfor %}
+{% endblock %}

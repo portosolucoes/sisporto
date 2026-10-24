@@ -1,8 +1,11 @@
 """Login: e-mail e senha (clientes e equipe) e Google (equipe @portosolucoes.com.br)."""
 from __future__ import annotations
 
+import base64
 import functools
 import hashlib
+import hmac
+import struct
 import secrets
 import time
 from urllib.parse import urlencode
@@ -28,7 +31,7 @@ def carregar_usuario():
     uid = session.get("uid")
     if not uid or request.endpoint in ("static", "saude"):
         return
-    u = db().one("SELECT id, nome, email, perfil, cliente_id, ativo FROM usuarios WHERE id = %s", [uid])
+    u = db().one("SELECT id, codigo, nome, email, perfil, cliente_id, ativo FROM usuarios WHERE id = %s", [uid])
     if not u or not u["ativo"]:
         session.clear()
         return
@@ -85,17 +88,36 @@ def inicio():
 @bp.route("/entrar", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        email = (request.form.get("email") or "").strip().lower()
+        ident = (request.form.get("email") or "").strip()
         senha = (request.form.get("senha") or "").strip()  # colar do terminal pode trazer espaços
-        u = db().one("SELECT id, perfil, senha_hash, ativo FROM usuarios WHERE email = %s", [email])
-        if u and u["ativo"] and u["senha_hash"] and check_password_hash(u["senha_hash"], senha):
+        if "@" in ident:
+            candidatos = db().all("""SELECT id, perfil, senha_hash FROM usuarios
+                                      WHERE email = %s AND ativo AND senha_hash IS NOT NULL""", [ident.lower()])
+        else:
+            candidatos = db().all("""SELECT id, perfil, senha_hash FROM usuarios
+                                      WHERE upper(codigo) = upper(%s) AND ativo AND senha_hash IS NOT NULL""", [ident])
+        certos = [c for c in candidatos if check_password_hash(c["senha_hash"], senha)]
+        if len(certos) > 1:
+            flash("Este e-mail tem mais de um acesso com a mesma senha. Entre com o seu código de usuário "
+                  "(ex.: R0001 ou C0001).", "erro")
+            return render_template("login.html", google=bool(current_app.config["GOOGLE_CLIENT_ID"]))
+        if certos:
+            u = certos[0]
+            if u["perfil"] != "cliente" and db().val("SELECT totp_ativo FROM usuarios WHERE id = %s", [u["id"]]):
+                proximo = request.args.get("proximo") or ""
+                session.clear()
+                session["pre_2fa"] = u["id"]
+                session["pre_2fa_proximo"] = proximo
+                session["pre_2fa_tentativas"] = 0
+                session["csrf"] = secrets.token_urlsafe(32)
+                return redirect(url_for("auth.login_2fa"))
             _entrar(u)
             proximo = request.args.get("proximo") or ""
             if proximo.startswith("/") and not proximo.startswith("//"):
                 return redirect(proximo)
             return redirect(destino_inicial(u))
         time.sleep(0.5)
-        flash("E-mail ou senha incorretos.", "erro")
+        flash("Usuário ou senha incorretos.", "erro")
     google = bool(current_app.config["GOOGLE_CLIENT_ID"])
     return render_template("login.html", google=google)
 
@@ -193,26 +215,34 @@ def recuperar_senha():
         if "@" not in email:
             flash("Digite o seu e-mail para recuperar a senha.", "erro")
             return render_template("recuperar.html", email=email)
-        u = db().one("SELECT id, nome, email, ativo FROM usuarios WHERE email = %s", [email])
-        if u and u["ativo"]:
-            recentes = db().val("""SELECT count(*) FROM senha_tokens
-                                    WHERE usuario_id = %s AND criado_em > now() - interval '1 hour'""", [u["id"]])
-            if recentes < MAX_PEDIDOS_HORA:
-                token = secrets.token_urlsafe(32)
-                db().run("""INSERT INTO senha_tokens (usuario_id, token_hash, expira_em, ip)
-                            VALUES (%s, %s, now() + make_interval(mins => %s), %s)""",
-                         [u["id"], _hash_token(token), VALIDADE_TOKEN_MIN, request.remote_addr])
-                link = url_for("auth.redefinir_senha", token=token, _external=True)
-                corpo = (f"Olá, {u['nome']}.\n\nRecebemos um pedido para criar uma nova senha no SisPorto.\n"
-                         f"Para continuar, abra o link abaixo (válido por {VALIDADE_TOKEN_MIN} minutos e uso único):\n\n"
-                         f"{link}\n\nSe não foi você, ignore este e-mail: sua senha atual continua valendo.\n\n"
-                         "—\nSuporte Porto Soluções Corporativas")
-                db().run("""INSERT INTO emails_saida (para, assunto, corpo, evento)
-                            VALUES (%s, 'SisPorto – criar nova senha', %s, 'senha')""", [u["email"], corpo])
+        for u in db().all("SELECT id, nome, email, codigo FROM usuarios WHERE email = %s AND ativo", [email]):
+            enviar_link_senha(u)
         time.sleep(0.3)
         flash(MSG_RECUPERAR, "ok")
         return redirect(url_for("auth.login"))
     return render_template("recuperar.html", email=email)
+
+
+def enviar_link_senha(u, forcar=False):
+    """Gera token de uso único e enfileira o e-mail com o link. Respeita o limite por hora."""
+    if not forcar:
+        recentes = db().val("""SELECT count(*) FROM senha_tokens
+                                WHERE usuario_id = %s AND criado_em > now() - interval '1 hour'""", [u["id"]])
+        if recentes >= MAX_PEDIDOS_HORA:
+            return False
+    token = secrets.token_urlsafe(32)
+    db().run("""INSERT INTO senha_tokens (usuario_id, token_hash, expira_em, ip)
+                VALUES (%s, %s, now() + make_interval(mins => %s), %s)""",
+             [u["id"], _hash_token(token), VALIDADE_TOKEN_MIN, request.remote_addr])
+    link = url_for("auth.redefinir_senha", token=token, _external=True)
+    corpo = (f"Olá, {u['nome']}.\n\nRecebemos um pedido para criar uma nova senha no SisPorto "
+             f"para o usuário {u.get('codigo') or ''}.\n"
+             f"Para continuar, abra o link abaixo (válido por {VALIDADE_TOKEN_MIN} minutos e uso único):\n\n"
+             f"{link}\n\nSe não foi você, ignore este e-mail: sua senha atual continua valendo.\n\n"
+             "—\nSuporte Porto Soluções Corporativas")
+    db().run("""INSERT INTO emails_saida (para, assunto, corpo, evento)
+                VALUES (%s, 'SisPorto – criar nova senha', %s, 'senha')""", [u["email"], corpo])
+    return True
 
 
 def _token_valido(token):
@@ -242,3 +272,87 @@ def redefinir_senha(token):
             flash("Senha alterada. Entre com a nova senha.", "ok")
             return redirect(url_for("auth.login"))
     return render_template("redefinir.html", email=t["email"])
+
+
+# --- verificação em duas etapas (TOTP, compatível com Google Authenticator) ---------------
+def totp_novo_segredo() -> str:
+    return base64.b32encode(secrets.token_bytes(20)).decode().rstrip("=")
+
+
+def totp_codigo(segredo: str, momento: float | None = None, passo: int = 30) -> str:
+    chave = base64.b32decode(segredo + "=" * (-len(segredo) % 8))
+    contador = int((momento if momento is not None else time.time()) // passo)
+    h = hmac.new(chave, struct.pack(">Q", contador), hashlib.sha1).digest()
+    o = h[-1] & 0x0F
+    return f"{(struct.unpack('>I', h[o:o + 4])[0] & 0x7FFFFFFF) % 1_000_000:06d}"
+
+
+def totp_valido(segredo: str, codigo: str) -> bool:
+    codigo = (codigo or "").replace(" ", "")
+    if not (segredo and codigo.isdigit() and len(codigo) == 6):
+        return False
+    agora = time.time()
+    return any(hmac.compare_digest(totp_codigo(segredo, agora + d * 30), codigo) for d in (-1, 0, 1))
+
+
+@bp.route("/entrar/2fa", methods=["GET", "POST"])
+def login_2fa():
+    uid = session.get("pre_2fa")
+    if not uid:
+        return redirect(url_for("auth.login"))
+    if request.method == "POST":
+        u = db().one("SELECT id, perfil, totp_segredo, ativo FROM usuarios WHERE id = %s", [uid])
+        if u and u["ativo"] and totp_valido(u["totp_segredo"], request.form.get("codigo")):
+            proximo = session.get("pre_2fa_proximo") or ""
+            _entrar(u)
+            if proximo.startswith("/") and not proximo.startswith("//"):
+                return redirect(proximo)
+            return redirect(destino_inicial(u))
+        session["pre_2fa_tentativas"] = session.get("pre_2fa_tentativas", 0) + 1
+        time.sleep(0.5)
+        if session["pre_2fa_tentativas"] >= 5:
+            session.clear()
+            flash("Muitas tentativas. Entre novamente com usuário e senha.", "erro")
+            return redirect(url_for("auth.login"))
+        flash("Código inválido. Confira o horário do celular e tente o código atual.", "erro")
+    return render_template("login_2fa.html")
+
+
+@bp.route("/conta/2fa", methods=["GET", "POST"])
+@login_obrigatorio
+def conta_2fa():
+    if g.usuario["perfil"] == "cliente":
+        abort(404)
+    atual = db().one("SELECT totp_ativo, totp_segredo FROM usuarios WHERE id = %s", [g.usuario["id"]])
+    if request.method == "POST":
+        codigo = request.form.get("codigo")
+        if atual["totp_ativo"]:
+            if totp_valido(atual["totp_segredo"], codigo):
+                db().run("UPDATE usuarios SET totp_ativo = false, totp_segredo = NULL WHERE id = %s", [g.usuario["id"]])
+                flash("Verificação em duas etapas desativada.", "ok")
+            else:
+                flash("Código inválido.", "erro")
+        else:
+            novo = session.get("totp_novo")
+            if novo and totp_valido(novo, codigo):
+                db().run("UPDATE usuarios SET totp_segredo = %s, totp_ativo = true WHERE id = %s",
+                         [novo, g.usuario["id"]])
+                session.pop("totp_novo", None)
+                flash("Verificação em duas etapas ativada. A partir de agora o login pedirá o código do app.", "ok")
+            else:
+                flash("Código inválido. Digite o código de 6 dígitos que aparece no app agora.", "erro")
+        return redirect(url_for("auth.conta_2fa"))
+    qr = uri = segredo = None
+    if not atual["totp_ativo"]:
+        segredo = session.get("totp_novo") or totp_novo_segredo()
+        session["totp_novo"] = segredo
+        from urllib.parse import quote
+        uri = (f"otpauth://totp/SisPorto:{quote(g.usuario['email'])}?secret={segredo}"
+               f"&issuer=SisPorto%20Porto%20Solu%C3%A7%C3%B5es&digits=6&period=30")
+        try:
+            import segno
+            qr = segno.make(uri, error="m").svg_inline(scale=5, dark="#14263d")
+        except ImportError:
+            qr = None
+    grupos = " ".join(segredo[i:i + 4] for i in range(0, len(segredo), 4)) if segredo else None
+    return render_template("conta_2fa.html", ativo=atual["totp_ativo"], qr=qr, uri=uri, segredo=grupos)

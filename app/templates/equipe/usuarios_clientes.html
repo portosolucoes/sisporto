@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}Usuários de clientes{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Usuários de clientes</h1><div class="muted">Pessoas dos clientes com acesso ao portal. Só é possível vincular a clientes ativos.</div></div></div>
+<form method="post" action="" class="card linha" id="novo-usuario-cliente" onsubmit="this.action=this.dataset.base.replace('999999999', this.cliente_id.value)" data-base="{{ url_for('equipe.contato_novo', cliente_id=999999999) }}">
+  {{ m.csrf_input() }}<input type="hidden" name="voltar" value="{{ url_for('equipe.usuarios_clientes') }}">
+  <div style="flex:1;min-width:180px"><label>Cliente (ativo)</label><select name="cliente_id" required><option value="">Escolha…</option>
+    {% for c in clientes %}<option value="{{ c.id }}">{{ c.nome }}</option>{% endfor %}</select></div>
+  <div style="flex:1;min-width:160px"><label>Nome</label><input type="text" name="nome" required></div>
+  <div style="flex:1;min-width:200px"><label>E-mail</label><input type="email" name="email" required></div>
+  <div style="width:150px"><label>Telefone</label><input type="text" name="telefone"></div>
+  <div style="width:150px"><label>Cargo</label><input type="text" name="cargo"></div>
+  <label class="check"><input type="checkbox" name="recebe_nps" value="1"> Recebe NPS</label>
+  <button class="btn">Criar usuário</button>
+</form>
+<form class="linha card" method="get">
+  <div style="flex:1;min-width:180px"><label>Cliente</label><select name="cliente"><option value="">Todos</option>{% for c in clientes %}<option value="{{ c.id }}" {{ 'selected' if f.cliente == c.id|string }}>{{ c.nome }}</option>{% endfor %}</select></div>
+  <div style="flex:1;min-width:180px"><label>Buscar</label><input type="text" name="busca" value="{{ f.busca }}" placeholder="Nome, e-mail ou código"></div>
+  <label class="check"><input type="checkbox" name="situacao" value="todos" {{ 'checked' if f.situacao == 'todos' }}> Incluir inativos</label>
+  <button class="btn sec">Filtrar</button>
+</form>
+<div class="tabela">{% if lista %}<table><thead><tr><th>Código</th><th>Nome</th><th>Cliente</th><th>Último acesso</th><th>Situação</th><th></th></tr></thead><tbody>
+{% for u in lista %}<tr><td><b>{{ u.codigo }}</b></td><td><a href="{{ url_for('equipe.usuario_editar', usuario_id=u.id) }}">{{ u.nome }}</a>{% if u.recebe_nps %} <span class="selo">NPS</span>{% endif %}<div class="muted small">{{ u.email }}{% if u.cargo %} · {{ u.cargo }}{% endif %}</div></td>
+<td><a href="{{ url_for('equipe.cliente', cliente_id=u.cliente_id) }}">{{ u.cliente }}</a>{% if not u.cliente_ativo %} <span class="selo">cliente inativo</span>{% endif %}</td>
+<td class="small">{{ u.ultimo_acesso|data_hora }}</td>
+<td>{% if u.ativo %}<span class="selo ok">Ativo</span>{% else %}<span class="selo">Inativo</span>{% endif %}</td>
+<td style="white-space:nowrap">
+{% for acao, rot in [('senha','Senha temporária'),('link','Enviar link de senha'),('alternar', 'Desativar' if u.ativo else 'Reativar')] %}
+<form method="post" action="{{ url_for('equipe.usuario_atualizar', usuario_id=u.id) }}" style="display:inline">{{ m.csrf_input() }}<input type="hidden" name="acao" value="{{ acao }}"><input type="hidden" name="voltar" value="{{ request.full_path }}"><button class="btn sec peq">{{ rot }}</button></form>
+{% endfor %}</td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="vazio">Nenhum usuário encontrado.</div>{% endif %}</div>
+{% endblock %}

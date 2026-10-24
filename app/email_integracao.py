@@ -113,7 +113,10 @@ def entrada():
                    UNION ALL SELECT 1 FROM emails_recusados WHERE message_id = %s""", [msg_id, msg_id, msg_id]):
         return jsonify(acao="duplicado")
 
-    autor = db().one("SELECT id, perfil, cliente_id, ativo FROM usuarios WHERE email = %s", [de])
+    contas = db().all("""SELECT id, perfil, cliente_id FROM usuarios WHERE email = %s AND ativo
+                          ORDER BY (perfil = 'cliente') DESC, id""", [de])
+    recurso = next((c for c in contas if c["perfil"] != "cliente"), None)
+    usuarios_cli = [c for c in contas if c["perfil"] == "cliente"]
 
     # resposta a chamado existente: pelo [#número] no assunto ou pela conversa do Gmail
     alvo = None
@@ -126,9 +129,9 @@ def entrada():
     if alvo:
         dominio = de.split("@")[1]
         cliente_dom = db().val("SELECT dominio_email FROM clientes WHERE id = %s", [alvo["cliente_id"]])
-        permitido = (autor and autor["ativo"] and (autor["perfil"] != "cliente"
-                                                   or autor["cliente_id"] == alvo["cliente_id"])) \
-            or (cliente_dom and dominio == cliente_dom)
+        do_cliente = next((c for c in usuarios_cli if c["cliente_id"] == alvo["cliente_id"]), None)
+        autor = do_cliente or recurso
+        permitido = autor is not None or (cliente_dom and dominio == cliente_dom)
         if not permitido:
             return _recusar(msg_id, de, assunto, "remetente não pertence ao cliente do chamado")
         corpo = limpar_resposta(texto) or "(mensagem sem texto)"
@@ -142,10 +145,11 @@ def entrada():
         return jsonify(acao="resposta", numero=alvo["numero"])
 
     # novo chamado
-    if autor and autor["perfil"] != "cliente":
-        return _recusar(msg_id, de, assunto, "e-mail da equipe sem [#número] no assunto")
-    if autor and autor["ativo"]:
+    if usuarios_cli:
+        autor = usuarios_cli[0]
         cliente_id, solicitante_id, solicitante_email = autor["cliente_id"], autor["id"], None
+    elif recurso:
+        return _recusar(msg_id, de, assunto, "e-mail de recurso da Porto sem [#número] no assunto")
     else:
         cliente_id = db().val("SELECT id FROM clientes WHERE dominio_email = %s AND ativo", [de.split("@")[1]])
         solicitante_id, solicitante_email = None, de

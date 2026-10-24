@@ -26,7 +26,7 @@ ROTULOS = {
         "mensal_fixo": "Mensal fixo", "banco_horas": "Banco de horas", "hora_avulsa": "Hora avulsa",
         "projeto": "Projeto", "proposta_avulsa": "Proposta avulsa",
     },
-    "perfil": {"admin": "Administrador", "tecnico": "Técnico", "financeiro": "Financeiro", "cliente": "Cliente"},
+    "perfil": {"admin": "Administrador", "tecnico": "Técnico", "financeiro": "Financeiro", "cliente": "Usuário do cliente"},
     "origem": {"portal": "Portal", "email": "E-mail", "interno": "Interno"},
     "apontamento": {"pendente": "Pendente", "aprovado": "Aprovado", "rejeitado": "Rejeitado"},
 }
@@ -140,3 +140,29 @@ ALFABETO_SENHA = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"  # sem
 def senha_temporaria(n: int = 12) -> str:
     """Senha fácil de ler e digitar (sem caracteres que se confundem)."""
     return "".join(secrets.choice(ALFABETO_SENHA) for _ in range(n))
+
+
+DOMINIOS_PUBLICOS = {
+    "gmail.com", "googlemail.com", "hotmail.com", "hotmail.com.br", "outlook.com", "outlook.com.br", "live.com",
+    "msn.com", "yahoo.com", "yahoo.com.br", "icloud.com", "me.com", "uol.com.br", "bol.com.br", "terra.com.br",
+    "ig.com.br", "globo.com", "globomail.com", "zipmail.com.br", "proton.me", "protonmail.com", "aol.com",
+}
+RE_DOMINIO = re.compile(r"^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$")
+
+
+def normalizar_dominio(texto):
+    """'Contato@Empresa.com.br' / 'https://www.empresa.com.br/' -> 'empresa.com.br'. Vazio -> None."""
+    t = (texto or "").strip().lower()
+    if not t:
+        return None
+    if "@" in t:
+        t = t.rsplit("@", 1)[1]
+    t = re.sub(r"^[a-z]+://", "", t).split("/")[0].strip(". ")
+    if t.startswith("www."):
+        t = t[4:]
+    if not RE_DOMINIO.match(t):
+        raise ValueError(f"Domínio de e-mail inválido: '{texto}'. Use só o domínio, ex.: empresa.com.br")
+    if t in DOMINIOS_PUBLICOS:
+        raise ValueError(f"'{t}' é um provedor público de e-mail e não pode identificar um cliente. "
+                         "Deixe o campo vazio e cadastre os usuários do cliente individualmente.")
+    return t

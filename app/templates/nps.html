@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block titulo %}Pesquisa de satisfação{% endblock %}
+{% block publico %}
+<div class="login"><div class="caixa" style="max-width:560px">
+  <div class="marca"><img src="{{ url_for('logo') }}" alt="Porto Soluções Corporativas" style="max-height:72px;max-width:280px"></div>
+  <div class="card">
+  {% if r.respondido_em %}
+    <h2>Obrigado, {{ r.nome.split()[0] }}!</h2><p class="muted">Sua resposta foi registrada e nos ajuda a melhorar.</p>
+  {% else %}
+    <h2>Olá, {{ r.nome.split()[0] }}!</h2>
+    <p>Em uma escala de 0 a 10, quanto você recomendaria a <b>Porto Soluções</b> a um colega ou parceiro?</p>
+    <form method="post"><input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="nps-escala">{% for n in range(11) %}<label class="nps-n n{{ n }}"><input type="radio" name="nota" value="{{ n }}" required><span>{{ n }}</span></label>{% endfor %}</div>
+      <div class="nps-legenda"><span>Nada provável</span><span>Muito provável</span></div>
+      <div class="campo"><label>Quer comentar algo? (opcional)</label><textarea name="comentario" style="min-height:80px"></textarea></div>
+      <button class="btn" style="width:100%">Enviar resposta</button>
+    </form>
+  {% endif %}
+  </div>
+</div></div>
+{% endblock %}

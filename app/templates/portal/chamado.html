@@ -5,11 +5,12 @@
 <h1>#{{ c.numero }} · {{ c.titulo }}</h1><div>{{ m.selo(c.status,'status') }} {{ m.selo(c.prioridade,'prioridade') }}</div></div></div>
 <div class="grid g-2-1">
   <div>
-    <div class="card"><h3>Descrição</h3><div style="white-space:pre-wrap">{{ c.descricao }}</div></div>
+    <div class="card"><h3>Descrição</h3><div style="white-space:pre-wrap">{{ c.descricao }}</div>{{ m.lista_anexos(anexos) }}</div>
     <div class="card"><h2>Conversa</h2>{{ m.linha_do_tempo(tempo) }}
       {% if c.status != 'fechado' %}
-      <form method="post" action="{{ url_for('portal.chamado_responder', numero=c.numero) }}">{{ m.csrf_input() }}
+      <form method="post" action="{{ url_for('portal.chamado_responder', numero=c.numero) }}" enctype="multipart/form-data">{{ m.csrf_input() }}
         <div class="campo"><label>Sua mensagem</label><textarea name="texto" required></textarea></div>
+        {{ m.campo_anexo() }}
         {% if c.status == 'resolvido' %}<label class="check campo"><input type="checkbox" name="reabrir" value="1"> O problema não foi resolvido — reabrir chamado</label>{% endif %}
         <button class="btn">Enviar</button></form>
       {% endif %}

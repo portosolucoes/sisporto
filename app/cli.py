@@ -107,14 +107,24 @@ def registrar(app):
             return
         feitas = atualizar_banco()
         click.echo("Migrações aplicadas: " + (", ".join(feitas) if feitas else "nenhuma (já atualizado)"))
+        garantir_master()
+
+    def garantir_master():
+        """O e-mail ADMIN_MASTER é sempre administrador ativo."""
+        n = db().val("""WITH x AS (UPDATE usuarios SET perfil = 'admin', ativo = true
+                                    WHERE lower(email) = %s AND perfil <> 'cliente' AND (perfil <> 'admin' OR NOT ativo)
+                                    RETURNING 1) SELECT count(*) FROM x""", [app.config["ADMIN_MASTER"]])
+        db().commit()
+        if n:
+            click.echo(f"Administrador master {app.config['ADMIN_MASTER']} restaurado.")
 
     @app.cli.command("definir-senha")
     @click.argument("email")
     def definir_senha(email):
         """Gera uma senha temporária para o usuário EMAIL."""
         senha = senha_temporaria()
-        n = db().run("UPDATE usuarios SET senha_hash = %s WHERE email = %s",
-                     [generate_password_hash(senha), email.lower()])
+        n = db().run("UPDATE usuarios SET senha_hash = %s WHERE email = %s OR upper(codigo) = upper(%s)",
+                     [generate_password_hash(senha), email.lower(), email])
         db().commit()
         if not n:
             raise click.ClickException("Usuário não encontrado.")
@@ -126,13 +136,15 @@ def registrar(app):
     def criar_admin(email, nome):
         """Cria (ou corrige) EMAIL como administrador ativo e gera senha temporária."""
         senha = senha_temporaria()
-        db().run("""INSERT INTO usuarios (nome, email, perfil, senha_hash)
-                    VALUES (%s, %s, 'admin', %s)
-                    ON CONFLICT (email) DO UPDATE
-                    SET perfil = 'admin', cliente_id = NULL, ativo = true, senha_hash = EXCLUDED.senha_hash""",
-                 [nome, email.strip().lower(), generate_password_hash(senha)])
+        email = email.strip().lower()
+        h = generate_password_hash(senha)
+        codigo = db().val("""UPDATE usuarios SET perfil = 'admin', ativo = true, senha_hash = %s
+                              WHERE email = %s AND perfil <> 'cliente' RETURNING codigo""", [h, email])
+        if not codigo:
+            codigo = db().val("""INSERT INTO usuarios (nome, email, perfil, senha_hash) VALUES (%s, %s, 'admin', %s)
+                                 RETURNING codigo""", [nome, email, h])
         db().commit()
-        click.echo(f"Administrador {email} pronto. Senha temporária de {email}: {senha}")
+        click.echo(f"Administrador {email} (código {codigo}) pronto. Senha temporária de {email}: {senha}")
 
     @app.cli.command("demo")
     def demo():

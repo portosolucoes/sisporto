@@ -34,20 +34,25 @@ def criar(*, cliente_id, titulo, descricao, prioridade, origem, solicitante_id=N
         ok = db().val("SELECT 1 FROM contratos WHERE id = %s AND cliente_id = %s", [contrato_id, cliente_id])
         if not ok:
             raise ValueError("Contrato não pertence ao cliente.")
-    return db().one(
+    novo = db().one(
         """INSERT INTO chamados (cliente_id, contrato_id, solicitante_id, solicitante_email, responsavel_id,
                                 titulo, descricao, categoria, prioridade, origem)
            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, numero""",
         [cliente_id, contrato_id or None, solicitante_id, solicitante_email, responsavel_id or None,
          titulo, descricao, (categoria or "").strip() or None, prioridade, origem])
+    if prioridade == "critica":
+        from .integracoes import alerta_critico
+        alerta_critico(novo["id"])
+    return novo
 
 
 def responder(chamado_id, autor_id, texto, interna=False):
     texto = (texto or "").strip()
     if not texto:
         raise ValueError("Escreva a mensagem.")
-    db().run("INSERT INTO chamado_interacoes (chamado_id, autor_id, tipo, texto) VALUES (%s,%s,%s,%s)",
-             [chamado_id, autor_id, "interna" if interna else "publica", texto])
+    return db().val("""INSERT INTO chamado_interacoes (chamado_id, autor_id, tipo, texto)
+                       VALUES (%s,%s,%s,%s) RETURNING id""",
+                    [chamado_id, autor_id, "interna" if interna else "publica", texto])
 
 
 def linha_do_tempo(chamado_id, incluir_internas=True):

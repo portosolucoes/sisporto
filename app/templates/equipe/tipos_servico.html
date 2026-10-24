@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}Tipos de serviço{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Tipos de serviço</h1><div class="muted">Usados nos apontamentos de horas e no painel do cliente (horas por tipo). Tipos inativos deixam de aparecer para novos lançamentos.</div></div></div>
+<div class="tabela" style="margin-bottom:18px"><table><thead><tr><th>Ordem</th><th>Nome</th><th class="num">Horas lançadas</th><th>Situação</th><th></th></tr></thead><tbody>
+{% for t in tipos %}<tr>
+<td colspan="2"><form method="post" class="linha" style="flex-wrap:nowrap">{{ m.csrf_input() }}<input type="hidden" name="id" value="{{ t.id }}">
+  <input type="number" name="ordem" value="{{ t.ordem }}" style="width:70px" aria-label="Ordem">
+  <input type="text" name="nome" value="{{ t.nome }}" required aria-label="Nome">
+  <button class="btn sec peq" name="acao" value="salvar">Salvar</button></form></td>
+<td class="num">{{ t.minutos|horas }}</td>
+<td>{% if t.ativo %}<span class="selo ok">Ativo</span>{% else %}<span class="selo">Inativo</span>{% endif %}</td>
+<td><form method="post">{{ m.csrf_input() }}<input type="hidden" name="id" value="{{ t.id }}"><button class="btn sec peq" name="acao" value="alternar">{{ 'Desativar' if t.ativo else 'Reativar' }}</button></form></td>
+</tr>{% endfor %}</tbody></table></div>
+<form method="post" class="card linha">{{ m.csrf_input() }}
+  <div style="flex:1;min-width:220px"><label>Novo tipo de serviço</label><input type="text" name="nome" required placeholder="Ex.: Treinamento"></div>
+  <button class="btn" name="acao" value="criar">Adicionar</button>
+</form>
+{% endblock %}

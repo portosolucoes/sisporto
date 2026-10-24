@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}{{ 'Editar' if a.id else 'Gerar' }} apontamento{% endblock %}
+{% block conteudo %}
+<div class="topo"><h1>{{ 'Editar' if a.id else 'Gerar' }} apontamento{% if a.id %} <span class="muted small">#{{ a.id }}</span>{% endif %}</h1>
+<a class="btn sec" href="{{ url_for('gestao.apontamentos') if admin else url_for('equipe.horas') }}">Voltar</a></div>
+{% macro dur(min) %}{% if min %}{{ (min|int) // 60 }}:{{ '%02d'|format((min|int) % 60) }}{% endif %}{% endmacro %}
+<form method="post" class="card">{{ m.csrf_input() }}
+  <div class="grid g2">
+  {% if admin %}
+    <div><label>Recurso</label><select name="usuario_id" required><option value="">Escolha…</option>{% for r in recursos %}<option value="{{ r.id }}" {{ 'selected' if a.usuario_id|string == r.id|string }}>{{ r.nome }} ({{ r.codigo }})</option>{% endfor %}</select></div>
+    <div><label>Status</label><select name="status">{% for s in ['pendente','aprovado','rejeitado'] %}<option value="{{ s }}" {{ 'selected' if a.status == s }}>{{ s|rotulo('apontamento') }}</option>{% endfor %}</select></div>
+    <div><label>Chamado nº</label><input type="text" name="chamado" inputmode="numeric" value="{{ a.chamado if a.chamado is defined else (a.numero or '') }}" placeholder="ex.: 1024"><div class="muted small">Ou deixe vazio e escolha o contrato.</div></div>
+    <div><label>Contrato (sem chamado)</label><select name="contrato_id"><option value="">—</option>{% for ct in contratos %}<option value="{{ ct.id }}" {{ 'selected' if a.contrato_id|string == ct.id|string and not a.numero }}>{{ ct.cliente }} – {{ ct.descricao }}</option>{% endfor %}</select></div>
+  {% else %}
+    <div class="muted" style="grid-column:1/-1">{% if a.numero %}Chamado <a href="{{ url_for('equipe.chamado', numero=a.numero) }}">#{{ a.numero }}</a>{% else %}Lançamento em contrato{% endif %} · só lançamentos pendentes podem ser alterados.</div>
+  {% endif %}
+    <div><label>Data</label><input type="date" name="data" value="{{ a.data.isoformat() if a.data and a.data.isoformat is defined else a.data }}" max="{{ hoje.isoformat() }}" required></div>
+    <div><label>Duração</label><input type="text" name="duracao" value="{{ a.duracao if a.duracao is defined else dur(a.minutos) }}" placeholder="1:30" required></div>
+    <div><label>Tipo de serviço</label><select name="tipo_servico_id" required>{% for t in tipos %}<option value="{{ t.id }}" {{ 'selected' if a.tipo_servico_id|string == t.id|string }}>{{ t.nome }}</option>{% endfor %}</select></div>
+    <div><label class="check" style="margin-top:28px"><input type="checkbox" name="faturavel" value="1" {{ 'checked' if a.faturavel }}> Faturável</label></div>
+    <div style="grid-column:1/-1"><label>O que foi feito</label><textarea name="descricao" rows="3" required>{{ a.descricao or '' }}</textarea></div>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap"><button class="btn">Salvar</button>
+  {% if admin and a.id %}<button class="btn perigo" name="acao" value="excluir" formnovalidate onclick="return confirm('Excluir este apontamento?')">Excluir</button>{% endif %}</div>
+</form>
+{% endblock %}

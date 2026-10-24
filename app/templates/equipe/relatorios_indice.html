@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block titulo %}Relatórios{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Relatórios</h1><div class="muted">Modelos de gestão para consultorias de TI. Todos com filtros e exportação para Excel.</div></div></div>
+<div class="grid g3">
+{% for chave, titulo, desc, _ in itens %}
+<a class="card rel-card" href="{{ url_for('relatorios.apontamentos') if chave == 'apontamentos' else url_for('relatorios.relatorio', chave=chave) }}">
+  <h2>{{ titulo }}</h2><p class="muted" style="margin:0">{{ desc }}</p></a>
+{% endfor %}
+</div>
+{% endblock %}

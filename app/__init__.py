@@ -19,11 +19,12 @@ def create_app(config: dict | None = None) -> Flask:
         GOOGLE_CLIENT_SECRET=os.environ.get("GOOGLE_CLIENT_SECRET", ""),
         DOMINIO_EQUIPE=os.environ.get("DOMINIO_EQUIPE", "portosolucoes.com.br"),
         INTEGRACAO_TOKEN=os.environ.get("INTEGRACAO_TOKEN", ""),
+        ADMIN_MASTER=os.environ.get("ADMIN_MASTER", "contato@portosolucoes.com.br").lower(),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SEGURO", "1") == "1",
         PERMANENT_SESSION_LIFETIME=60 * 60 * 12,
-        MAX_CONTENT_LENGTH=10 * 1024 * 1024,
+        MAX_CONTENT_LENGTH=21 * 1024 * 1024,  # anexos de até 20 MB
     )
     if config:
         app.config.update(config)
@@ -49,18 +50,27 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.context_processor
     def _ctx():
-        return {"csrf": session.get("csrf", ""), "usuario": g.get("usuario")}
+        from .acessos import pode
+        return {"csrf": session.get("csrf", ""), "usuario": g.get("usuario"), "pode": pode}
 
     from .auth import bp as auth_bp, carregar_usuario
     from .rotas_equipe import bp as equipe_bp
     from .rotas_portal import bp as portal_bp
     from .email_integracao import bp as email_bp
+    from .relatorios import bp as relatorios_bp
+    from .anexos import bp as anexos_bp
+    from .integracoes import bp as integracoes_bp
+    from .rotas_gestao import bp as gestao_bp
 
     app.before_request(carregar_usuario)
     app.register_blueprint(auth_bp)
     app.register_blueprint(equipe_bp)
     app.register_blueprint(portal_bp, url_prefix="/portal")
     app.register_blueprint(email_bp, url_prefix="/integracao/email")
+    app.register_blueprint(relatorios_bp, url_prefix="/relatorios")
+    app.register_blueprint(anexos_bp)
+    app.register_blueprint(integracoes_bp)
+    app.register_blueprint(gestao_bp)
 
     @app.get("/saude")
     def saude():
@@ -89,6 +99,16 @@ def create_app(config: dict | None = None) -> Flask:
     @app.errorhandler(404)
     def _nao_encontrado(e):
         return util.pagina_erro("Não encontrado", "A página ou registro não existe."), 404
+
+    @app.errorhandler(413)
+    def _grande(e):
+        from flask import flash, redirect
+        flash("Arquivo maior que 20 MB não é aceito. Envie o link de uma pasta do Google Drive (ou similar) "
+              "na mensagem do chamado.", "erro")
+        volta = request.referrer or "/"
+        if not volta.startswith(request.host_url):
+            volta = "/"
+        return redirect(volta)
 
     @app.errorhandler(400)
     def _invalido(e):

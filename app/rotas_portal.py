@@ -5,6 +5,7 @@ import datetime as dt
 
 from flask import Blueprint, flash, g, redirect, render_template, request, url_for
 
+from . import anexos as anx
 from . import chamados as ch
 from .auth import perfis
 from .db import db
@@ -39,11 +40,16 @@ def painel():
                               LEFT JOIN vw_franquia_mes f ON f.contrato_id = c.id AND f.mes = %s
                              WHERE c.cliente_id = %s AND c.ativo AND c.tipo = 'mensal_fixo'
                                AND c.franquia_horas IS NOT NULL""", [mes, cid])
+    por_tipo = db().all("""SELECT coalesce(ts.nome, 'Sem tipo') AS tipo, sum(a.minutos) AS minutos
+                             FROM apontamentos a JOIN contratos ct ON ct.id = a.contrato_id
+                             LEFT JOIN tipos_servico ts ON ts.id = a.tipo_servico_id
+                            WHERE ct.cliente_id = %s AND a.status <> 'rejeitado' AND a.data >= %s AND a.data < %s
+                            GROUP BY 1 ORDER BY 2 DESC""", [cid, mes, (mes + dt.timedelta(days=32)).replace(day=1)])
     abertos = db().all("""SELECT * FROM vw_chamados_sla WHERE cliente_id = %s
                            AND status IN ('novo','em_atendimento','aguardando_cliente')
                            ORDER BY criado_em DESC""", [cid])
     return render_template("portal/painel.html", empresa=empresa, horas_mes=horas_mes, historico=historico,
-                           bancos=bancos, franquias=franquias, abertos=abertos, mes=mes)
+                           bancos=bancos, franquias=franquias, abertos=abertos, mes=mes, por_tipo=por_tipo)
 
 
 @bp.get("/chamados")
@@ -64,10 +70,13 @@ def chamados():
 def chamado_novo():
     if request.method == "POST":
         try:
+            anexo = anx.validar(request.files.get("anexo"))
             novo = ch.criar(cliente_id=_cid(), solicitante_id=g.usuario["id"], origem="portal",
                             titulo=request.form.get("titulo"), descricao=request.form.get("descricao"),
                             prioridade=request.form.get("prioridade", "media"),
                             categoria=request.form.get("categoria"))
+            if anexo:
+                anx.salvar(novo["id"], None, anexo, g.usuario["id"])
             notificar(novo["id"], "aberto")
             flash(f"Chamado #{novo['numero']} aberto. Você receberá as atualizações por aqui e por e-mail.", "ok")
             return redirect(url_for("portal.chamado", numero=novo["numero"]))
@@ -83,7 +92,8 @@ def chamado(numero):
     tempo = ch.linha_do_tempo(c["id"], incluir_internas=False)
     horas = db().all("""SELECT data, minutos, descricao FROM apontamentos
                          WHERE chamado_id = %s AND status <> 'rejeitado' AND faturavel ORDER BY data""", [c["id"]])
-    return render_template("portal/chamado.html", c=c, tempo=tempo, horas=horas)
+    return render_template("portal/chamado.html", c=c, tempo=tempo, horas=horas,
+                           anexos=anx.listar(c["id"], incluir_internos=False))
 
 
 @bp.post("/chamados/<int:numero>/responder")
@@ -94,7 +104,10 @@ def chamado_responder(numero):
         flash("Este chamado está fechado. Abra um novo, se precisar.", "erro")
     else:
         try:
-            ch.responder(c["id"], g.usuario["id"], request.form.get("texto"))
+            anexo = anx.validar(request.files.get("anexo"))
+            iid = ch.responder(c["id"], g.usuario["id"], request.form.get("texto"))
+            if anexo:
+                anx.salvar(c["id"], iid, anexo, g.usuario["id"])
             if c["status"] == "resolvido" and request.form.get("reabrir") == "1":
                 db().run("UPDATE chamados SET status = 'em_atendimento' WHERE id = %s", [c["id"]])
             flash("Mensagem enviada.", "ok")
@@ -127,8 +140,9 @@ def horas():
     prox = (mes + dt.timedelta(days=32)).replace(day=1)
     linhas = db().all("""
         SELECT a.data, a.minutos, a.descricao, a.faturavel, a.status, c.numero, c.titulo, u.nome AS tecnico,
-               ct.descricao AS contrato
+               ct.descricao AS contrato, ts.nome AS tipo_servico
           FROM apontamentos a
+          LEFT JOIN tipos_servico ts ON ts.id = a.tipo_servico_id
           JOIN contratos ct ON ct.id = a.contrato_id
           LEFT JOIN chamados c ON c.id = a.chamado_id
           JOIN usuarios u ON u.id = a.usuario_id
