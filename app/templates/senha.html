@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% block titulo %}Trocar senha{% endblock %}
 {% block conteudo %}
-<div class="topo"><h1>Trocar senha</h1></div>
+<div class="topo"><h1>{{ 'Crie a sua senha' if provisoria else 'Trocar senha' }}</h1></div>
 <div class="card" style="max-width:460px">
+{% if provisoria %}<p class="muted">Você entrou com uma senha temporária. Escolha agora uma senha só sua para continuar usando o sistema.</p>{% endif %}
 <form method="post">
   <input type="hidden" name="csrf" value="{{ csrf }}">
-  <div class="campo"><label>Senha atual</label><input type="password" name="atual" autocomplete="current-password"></div>
+  {% if not provisoria %}<div class="campo"><label>Senha atual</label><input type="password" name="atual" required autocomplete="current-password"><div class="ajuda">Esqueceu? Saia e use “Esqueci minha senha” na tela de entrada.</div></div>{% endif %}
   <div class="campo"><label>Nova senha</label><input type="password" name="nova" required minlength="10" autocomplete="new-password"><div class="ajuda">Mínimo de 10 caracteres.</div></div>
   <div class="campo"><label>Confirme a nova senha</label><input type="password" name="confirmacao" required autocomplete="new-password"></div>
   <button class="btn">Salvar</button>

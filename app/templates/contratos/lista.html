@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block titulo %}Contratos{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Contratos</h1><div class="muted">{{ linhas|length }} contrato(s){% if receita %} · receita mensal recorrente dos ativos listados: <b>{{ receita|moeda }}</b>{% endif %}</div></div>
+<a class="btn" href="{{ url_for('contratos.novo', cliente=f.cliente or None) }}">+ Novo contrato</a></div>
+<form method="get" class="card linha filtros">
+  <div style="flex:1;min-width:180px"><label>Buscar</label><input type="search" name="busca" value="{{ f.busca }}" placeholder="Cliente ou descrição"></div>
+  <div><label>Cliente</label><select name="cliente"><option value="">Todos</option>{% for c in clientes %}<option value="{{ c.id }}" {{ 'selected' if f.cliente == c.id|string }}>{{ c.nome }}</option>{% endfor %}</select></div>
+  <div><label>Tipo</label><select name="tipo"><option value="">Todos</option>{% for v in ['mensal_fixo','banco_horas','hora_avulsa','projeto','proposta_avulsa'] %}<option value="{{ v }}" {{ 'selected' if f.tipo == v }}>{{ v|rotulo('tipo_contrato') }}</option>{% endfor %}</select></div>
+  <div><label>Situação</label><select name="situacao">{% for v, n in [('ativos','Ativos'),('vencendo','Vencendo em 60 dias'),('sem_saldo','Sem saldo de horas'),('inativos','Inativos'),('todos','Todos')] %}<option value="{{ v }}" {{ 'selected' if f.situacao == v }}>{{ n }}</option>{% endfor %}</select></div>
+  <button class="btn sec">Filtrar</button>
+</form>
+<div class="tabela">{% if linhas %}<table><thead><tr><th>Cliente</th><th>Contrato</th><th>Tipo</th><th>Condições</th><th>Vigência</th><th>Saldo</th><th>SLA</th><th></th></tr></thead><tbody>
+{% for ct in linhas %}<tr id="ct{{ ct.id }}"><td><a href="{{ url_for('equipe.cliente', cliente_id=ct.cliente_id) }}">{{ ct.cliente }}</a></td>
+<td>{{ ct.descricao }}{% if not ct.ativo %} <span class="selo">Inativo</span>{% elif ct.vencido %} <span class="selo bad">Vencido</span>{% endif %}{% if ct.tipo_servico %}<div class="muted small">{{ ct.tipo_servico }}</div>{% endif %}</td>
+<td class="small">{{ ct.tipo|rotulo('tipo_contrato') }}</td>
+<td class="small">{% if ct.valor_mensal %}{{ ct.valor_mensal|moeda }}/mês{% endif %}{% if ct.franquia_horas %} · franquia {{ ct.franquia_horas|horas_dec }}{% endif %}{% if ct.horas_pacote %} {{ ct.horas_pacote|horas_dec }} liberadas{% endif %}{% if ct.valor_hora %} · hora {{ ct.valor_hora|moeda }}{% endif %}{% if ct.valor_total %} {{ ct.valor_total|moeda }}{% endif %}</td>
+<td class="small">{{ ct.data_inicio|data }} → {{ ct.data_fim|data if ct.data_fim else 'indeterminado' }}</td>
+<td class="small">{% if ct.horas_saldo is not none %}<span class="{{ 'erro-txt' if ct.horas_saldo <= 0 }}">{{ ct.horas_saldo|horas_dec }}</span> <span class="muted">({{ ct.pct_consumido }}%)</span>{% else %}—{% endif %}</td>
+<td class="small">{{ ct.sla or 'Padrão' }}</td>
+<td><a class="btn sec peq" href="{{ url_for('equipe.contrato', contrato_id=ct.id, voltar=request.full_path) }}">Editar</a></td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="vazio">Nenhum contrato no filtro.</div>{% endif %}</div>
+{% endblock %}

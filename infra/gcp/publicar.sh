@@ -86,7 +86,9 @@ tarefa(){  # nome, argumentos separados por vírgula
 say "Criando/atualizando as tabelas do banco..."
 tarefa sisporto-banco "--app,app,banco-atualizar"
 
+GEROU_SENHA=0
 if [[ "${PRIMEIRA_SENHA:-}" == "1" || ! -f "$HOME/.sisporto_admin_ok" ]]; then
+  GEROU_SENHA=1
   say "Criando/corrigindo o administrador $ADMIN_EMAIL e gerando senha temporária..."
   tarefa sisporto-senha "--app,app,criar-admin,$ADMIN_EMAIL"
   sleep 5
@@ -98,4 +100,9 @@ fi
 URL=$(gcloud run services describe "$SERVICO" --region="$REGIAO" --format="value(status.url)")
 say "PRONTO!"
 echo "Sistema no ar: $URL"
-echo "Entre com $ADMIN_EMAIL e a senha temporária acima, e troque a senha em 'Trocar senha'."
+if [[ "$GEROU_SENHA" == "1" ]]; then
+  echo "Entre com $ADMIN_EMAIL e a senha temporária acima, e troque a senha em 'Trocar senha'."
+else
+  echo "Atualização publicada. As senhas não mudaram: entre com a senha que você já usa."
+  echo "(Esqueceu? Use 'Esqueci minha senha' na tela de login, ou rode: PRIMEIRA_SENHA=1 bash infra/gcp/publicar.sh)"
+fi

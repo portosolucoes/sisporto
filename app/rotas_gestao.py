@@ -304,3 +304,56 @@ def saldos():
                                         WHERE a.chamado_id = c.id AND a.status <> 'rejeitado') AS usado
                                  FROM chamados c WHERE c.contrato_id = %s ORDER BY c.numero DESC""", [sel])
     return render_template("gestao/saldos.html", contratos=contratos, sel=sel, chamados=chamados, tipos=_tipos())
+
+
+# =============================================================================
+# Aprovação de horas dos recursos (admin)
+# =============================================================================
+@bp.route("/admin/aprovacao", methods=["GET", "POST"])
+@admin
+def aprovacao():
+    if request.method == "POST":
+        ids = [int(i) for i in request.form.getlist("ids") if i.isdigit()]
+        acao = request.form.get("acao")
+        motivo = (request.form.get("motivo") or "").strip()
+        if not ids:
+            flash("Selecione ao menos um lançamento.", "erro")
+        elif acao == "rejeitado" and not motivo:
+            flash("Informe o motivo da rejeição (o recurso verá o motivo).", "erro")
+        elif acao in ("aprovado", "rejeitado"):
+            n = 0
+            for i in ids:
+                n += db().run("""UPDATE apontamentos SET status = %s, aprovado_por = %s, aprovado_em = now(),
+                                        motivo_rejeicao = %s
+                                  WHERE id = %s AND status = 'pendente'""",
+                              [acao, g.usuario["id"], motivo if acao == "rejeitado" else None, i])
+            flash(f"{n} lançamento(s) {'aprovado(s)' if acao == 'aprovado' else 'rejeitado(s)'}.", "ok")
+        return redirect(request.full_path if request.query_string else url_for("gestao.aprovacao"))
+    f = {k: request.args.get(k, "") for k in ("recurso", "cliente", "de", "ate")}
+    where, p = ["a.status = 'pendente'"], []
+    if _int(f["recurso"]):
+        where.append("a.usuario_id = %s"); p.append(int(f["recurso"]))
+    if _int(f["cliente"]):
+        where.append("cl.id = %s"); p.append(int(f["cliente"]))
+    for k, op in (("de", ">="), ("ate", "<=")):
+        try:
+            if f[k]:
+                where.append(f"a.data {op} %s"); p.append(dt.date.fromisoformat(f[k]))
+        except ValueError:
+            f[k] = ""
+    linhas = db().all(f"""SELECT a.*, u.nome AS recurso, u.codigo, c.numero, c.titulo, ct.descricao AS contrato,
+                                 coalesce(cl.nome_fantasia, cl.razao_social) AS cliente, ts.nome AS tipo
+                            FROM apontamentos a JOIN usuarios u ON u.id = a.usuario_id
+                            LEFT JOIN chamados c ON c.id = a.chamado_id
+                            LEFT JOIN contratos ct ON ct.id = a.contrato_id
+                            LEFT JOIN clientes cl ON cl.id = coalesce(c.cliente_id, ct.cliente_id)
+                            LEFT JOIN tipos_servico ts ON ts.id = a.tipo_servico_id
+                           WHERE {' AND '.join(where)} ORDER BY u.nome, a.data, a.id""", p)
+    por_recurso = {}
+    for l in linhas:
+        r = por_recurso.setdefault(l["recurso"], {"minutos": 0, "fat": 0, "n": 0})
+        r["minutos"] += l["minutos"]; r["n"] += 1
+        r["fat"] += l["minutos"] if l["faturavel"] else 0
+    return render_template("gestao/aprovacao.html", linhas=linhas, f=f, por_recurso=por_recurso,
+                           recursos=db().all("SELECT id, nome FROM usuarios WHERE perfil <> 'cliente' ORDER BY nome"),
+                           clientes=db().all("SELECT id, coalesce(nome_fantasia, razao_social) AS nome FROM clientes ORDER BY 2"))

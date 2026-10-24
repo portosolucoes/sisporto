@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block titulo %}Dicionário de dados{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Dicionário de dados</h1><div class="muted">Estrutura atual do banco: {{ d.tabelas|selectattr('tipo','equalto','tabela')|list|length }} tabelas e {{ d.tabelas|selectattr('tipo','equalto','visão')|list|length }} visões.</div></div>
+<div><a class="btn sec" href="{{ url_for('adm.consultas') }}">Consultas SQL</a> <a class="btn" href="{{ url_for('adm.banco', formato='pdf') }}">Baixar PDF</a></div></div>
+<div class="card"><input type="search" id="filtro-tabelas" placeholder="Filtrar tabela ou coluna…" aria-label="Filtrar"></div>
+{% for t in d.tabelas %}
+<details class="card tabela-dic" data-busca="{{ t.nome }} {{ t.colunas|map(attribute='coluna')|join(' ') }}"><summary><b>{{ t.nome }}</b> <span class="selo">{{ t.tipo }}</span> <span class="muted small">{{ t.descricao or '' }}</span></summary>
+<div class="tabela" style="margin-top:10px"><table><thead><tr><th>Coluna</th><th>Tipo</th><th>Chave</th><th>Nulo</th><th>Padrão</th><th>Descrição</th></tr></thead><tbody>
+{% for c in t.colunas %}<tr><td><code>{{ c.coluna }}</code></td><td class="small">{{ c.tipo }}</td><td class="small">{% if c.coluna in t.pk %}<span class="selo ok">PK</span>{% endif %}{% if c.coluna in t.fk %} <span class="selo">FK → {{ t.fk[c.coluna] }}</span>{% endif %}</td><td class="small">{{ 'sim' if c.nulo else 'não' }}</td><td class="small"><code>{{ 'identidade' if c.identidade else (c.padrao or '') }}</code></td><td class="small">{{ c.descricao or '' }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% if t.unicas or t.checks %}<div class="small muted" style="margin-top:8px">{% if t.unicas %}Únicos: {{ t.unicas|join('; ') }}<br>{% endif %}{% if t.checks %}Regras: {{ t.checks|join('; ') }}{% endif %}</div>{% endif %}
+</details>{% endfor %}
+<div class="card"><h2>Tipos enumerados</h2>{% for e in d.tipos %}<p class="small"><b>{{ e.nome }}</b>: {{ e.valores }}</p>{% endfor %}</div>
+{% endblock %}

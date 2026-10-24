@@ -105,3 +105,53 @@
   }
   tick(); if (rodando) setInterval(tick, 1000);
 })();
+
+// cadastro do recurso: perfil admin marca (e trava) todas as rotinas; trocar de perfil aplica o padrão do novo perfil
+(function () {
+  var sel = document.getElementById('perfil-recurso');
+  if (!sel) return;
+  var original = sel.value;
+  var caixas = document.querySelectorAll('.rotinas input[type=checkbox]');
+  var guardado = {};
+  caixas.forEach(function (c) { guardado[c.value] = c.checked; });
+  sel.addEventListener('change', function () {
+    var p = sel.value;
+    document.getElementById('nota-admin').hidden = p !== 'admin';
+    caixas.forEach(function (c) {
+      if (p === 'admin') { c.checked = true; c.disabled = true; return; }
+      if (c.dataset.soAdmin === '1') { c.checked = false; c.disabled = true; return; }
+      c.disabled = false;
+      c.checked = p === original ? guardado[c.value] : (c.dataset.perfis || '').split(' ').indexOf(p) >= 0;
+    });
+  });
+})();
+
+// consultas SQL: Ctrl+Enter executa; filtro do dicionário de dados
+(function () {
+  var sql = document.getElementById('sql');
+  if (sql) sql.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); sql.form.querySelector('[value=executar]').click(); }
+  });
+  var f = document.getElementById('filtro-tabelas');
+  if (f) f.addEventListener('input', function () {
+    var q = f.value.toLowerCase();
+    document.querySelectorAll('.tabela-dic').forEach(function (d) {
+      d.hidden = q && d.dataset.busca.toLowerCase().indexOf(q) < 0;
+    });
+  });
+})();
+
+// menu: lembra quais pastas ficaram abertas
+(function () {
+  var chave = 'sisporto.pastas';
+  var abertas = {};
+  try { abertas = JSON.parse(localStorage.getItem(chave) || '{}'); } catch (e) { abertas = {}; }
+  document.querySelectorAll('details.pasta').forEach(function (d) {
+    var n = d.dataset.pasta;
+    if (abertas[n] && !d.open) d.open = true;
+    d.addEventListener('toggle', function () {
+      abertas[n] = d.open;
+      try { localStorage.setItem(chave, JSON.stringify(abertas)); } catch (e) { /* sem armazenamento */ }
+    });
+  });
+})();

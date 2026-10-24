@@ -37,6 +37,9 @@ def carregar_usuario():
         return
     g.usuario = u
     db().set_usuario(u["id"])
+    if session.get("senha_provisoria") and request.endpoint not in ("auth.trocar_senha", "auth.sair", "logo"):
+        flash("Você entrou com uma senha temporária. Crie a sua senha para continuar.", "ok")
+        return redirect(url_for("auth.trocar_senha"))
 
 
 def _entrar(u):
@@ -44,7 +47,8 @@ def _entrar(u):
     session.permanent = True
     session["uid"] = u["id"]
     session["csrf"] = secrets.token_urlsafe(32)
-    db().run("UPDATE usuarios SET ultimo_acesso = now() WHERE id = %s", [u["id"]])
+    if db().val("UPDATE usuarios SET ultimo_acesso = now() WHERE id = %s RETURNING senha_provisoria", [u["id"]]):
+        session["senha_provisoria"] = True  # entrou com senha temporária: troca obrigatória
 
 
 def destino_inicial(u):
@@ -137,18 +141,22 @@ def trocar_senha():
         nova = request.form.get("nova") or ""
         conf = request.form.get("confirmacao") or ""
         h = db().val("SELECT senha_hash FROM usuarios WHERE id = %s", [g.usuario["id"]])
-        if h and not check_password_hash(h, atual):
+        provisoria = session.get("senha_provisoria")
+        if h and not provisoria and not check_password_hash(h, atual.strip()):
             flash("Senha atual incorreta.", "erro")
         elif len(nova) < SENHA_MINIMA:
             flash(f"A nova senha precisa ter pelo menos {SENHA_MINIMA} caracteres.", "erro")
         elif nova != conf:
             flash("A confirmação não confere.", "erro")
+        elif h and check_password_hash(h, nova):
+            flash("A nova senha precisa ser diferente da atual.", "erro")
         else:
-            db().run("UPDATE usuarios SET senha_hash = %s WHERE id = %s",
+            db().run("UPDATE usuarios SET senha_hash = %s, senha_provisoria = false WHERE id = %s",
                      [generate_password_hash(nova), g.usuario["id"]])
+            session.pop("senha_provisoria", None)
             flash("Senha alterada.", "ok")
             return redirect(destino_inicial(g.usuario))
-    return render_template("senha.html")
+    return render_template("senha.html", provisoria=session.get("senha_provisoria"))
 
 
 @bp.get("/entrar/google")
@@ -264,7 +272,7 @@ def redefinir_senha(token):
         elif nova != (request.form.get("confirmacao") or ""):
             flash("A confirmação não confere.", "erro")
         else:
-            db().run("UPDATE usuarios SET senha_hash = %s WHERE id = %s",
+            db().run("UPDATE usuarios SET senha_hash = %s, senha_provisoria = false WHERE id = %s",
                      [generate_password_hash(nova), t["usuario_id"]])
             db().run("UPDATE senha_tokens SET usado_em = now() WHERE usuario_id = %s AND usado_em IS NULL",
                      [t["usuario_id"]])

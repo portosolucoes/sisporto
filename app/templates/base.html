@@ -18,31 +18,68 @@
     <div class="marca-logo"><img src="{{ url_for('logo') }}" alt="Porto Soluções Corporativas"></div>
     <nav>
       {% set ep = request.endpoint or '' %}
+      {% macro item(endpoint, rotulo, ativo=None) -%}
+        <a href="{{ url_for(endpoint) }}" class="{{ 'ativo' if (ativo if ativo is not none else (request.endpoint or '') == endpoint) }}">{{ rotulo }}</a>
+      {%- endmacro %}
+      {% macro pasta(nome, icone, endpoints) -%}
+        {% set e = request.endpoint or '' %}
+        {% set aberto = e in endpoints or (e.split('.')[0] ~ '.*') in endpoints %}
+        <details class="pasta" {{ 'open' if aberto }} data-pasta="{{ nome }}"><summary><span aria-hidden="true">{{ icone }}</span> {{ nome }}</summary><div>{{ caller() }}</div></details>
+      {%- endmacro %}
       {% if usuario.perfil == 'cliente' %}
-        <a href="{{ url_for('portal.painel') }}" class="{{ 'ativo' if ep == 'portal.painel' }}">Painel</a>
-        <a href="{{ url_for('portal.chamados') }}" class="{{ 'ativo' if ep.startswith('portal.chamado') }}">Meus chamados</a>
-        <a href="{{ url_for('portal.chamado_novo') }}">Abrir chamado</a>
-        <a href="{{ url_for('portal.horas') }}" class="{{ 'ativo' if ep == 'portal.horas' }}">Relatório de horas</a>
+        {% call pasta('Dashboards', '📊', ['portal.painel']) %}{{ item('portal.painel', 'Painel') }}{% endcall %}
+        {% call pasta('Atendimento', '🎧', ['portal.chamados', 'portal.chamado', 'portal.chamado_novo']) %}
+          {{ item('portal.chamados', 'Meus chamados', ep in ('portal.chamados', 'portal.chamado')) }}
+          {{ item('portal.chamado_novo', 'Abrir chamado') }}
+        {% endcall %}
+        {% call pasta('Relatórios', '📄', ['portal.horas']) %}{{ item('portal.horas', 'Relatório de horas') }}{% endcall %}
       {% else %}
-        <a href="{{ url_for('equipe.painel') }}" class="{{ 'ativo' if ep == 'equipe.painel' }}">Painel</a>
-        {% if pode('chamados') %}<a href="{{ url_for('equipe.chamados') }}" class="{{ 'ativo' if ep.startswith('equipe.chamado') }}">Chamados</a>{% endif %}
-        {% if pode('horas') or pode('aprovar_horas') %}<a href="{{ url_for('equipe.horas') }}" class="{{ 'ativo' if ep.startswith('equipe.hora') }}">Horas</a>{% endif %}
-        {% if usuario.perfil == 'admin' %}
-        <a href="{{ url_for('gestao.apontamentos') }}" class="{{ 'ativo' if ep.startswith('gestao.apontamento') }}">Apontamentos (admin)</a>
-        <a href="{{ url_for('gestao.saldos') }}" class="{{ 'ativo' if ep == 'gestao.saldos' }}">Saldos de horas</a>
+        {% set adm = usuario.perfil == 'admin' %}
+        {% call pasta('Dashboards', '📊', ['equipe.painel', 'adm.dashboard']) %}
+          {{ item('equipe.painel', 'Painel operacional') }}
+          {% if pode('dashboard') %}{{ item('adm.dashboard', 'Dashboard gerencial') }}{% endif %}
+        {% endcall %}
+        {% if pode('chamados') or pode('emails') %}
+        {% call pasta('Atendimento', '🎧', ['equipe.chamados', 'equipe.chamado', 'equipe.chamado_novo', 'equipe.emails_recusados']) %}
+          {% if pode('chamados') %}{{ item('equipe.chamados', 'Chamados', ep in ('equipe.chamados', 'equipe.chamado')) }}{{ item('equipe.chamado_novo', 'Novo chamado') }}{% endif %}
+          {% if pode('emails') %}{{ item('equipe.emails_recusados', 'E-mails não processados') }}{% endif %}
+        {% endcall %}
         {% endif %}
-        {% if pode('relatorios') %}<a href="{{ url_for('relatorios.indice') }}" class="{{ 'ativo' if ep.startswith('relatorios.') }}">📊 Relatórios</a>{% endif %}
-        {% if pode('emails') %}<a href="{{ url_for('equipe.emails_recusados') }}" class="{{ 'ativo' if ep == 'equipe.emails_recusados' }}">E-mails não processados</a>{% endif %}
-        <div class="sec">Cadastros</div>
-        <a href="{{ url_for('equipe.clientes') }}" class="{{ 'ativo' if ep.startswith('equipe.cliente') or ep.startswith('equipe.contrato') or ep.startswith('equipe.importar') }}">Clientes e contratos</a>
-        {% if pode('clientes') %}<a href="{{ url_for('equipe.usuarios_clientes') }}" class="{{ 'ativo' if ep == 'equipe.usuarios_clientes' }}">Usuários de clientes</a>{% endif %}
-        {% if pode('equipe') %}<a href="{{ url_for('equipe.equipe_lista') }}" class="{{ 'ativo' if ep in ('equipe.equipe_lista', 'equipe.acessos') }}">Recursos e acessos</a>{% endif %}
+        {% if pode('horas') or adm %}
+        {% call pasta('Horas', '⏱', ['equipe.horas', 'gestao.apontamento_proprio', 'gestao.aprovacao', 'gestao.apontamentos', 'gestao.apontamento_admin', 'gestao.saldos']) %}
+          {{ item('equipe.horas', 'Minhas horas', ep in ('equipe.horas', 'gestao.apontamento_proprio')) }}
+          {% if adm %}<a href="{{ url_for('gestao.aprovacao') }}" class="{{ 'ativo' if ep == 'gestao.aprovacao' }}">Aprovação de horas{% if a_aprovar %} <span class="contador">{{ a_aprovar }}</span>{% endif %}</a>
+          {{ item('gestao.apontamentos', 'Apontamentos dos recursos', ep in ('gestao.apontamentos', 'gestao.apontamento_admin')) }}
+          {{ item('gestao.saldos', 'Saldos de horas') }}{% endif %}
+        {% endcall %}
+        {% endif %}
+        {% if pode('relatorios') %}
+        {% call pasta('Relatórios', '📄', ['relatorios.*']) %}
+          {{ item('relatorios.indice', 'Todos os relatórios') }}
+          {% for c in catalogo_relatorios if pode(c[3]) %}<a href="{{ url_for('relatorios.apontamentos') if c[0] == 'apontamentos' else url_for('relatorios.relatorio', chave=c[0]) }}" class="{{ 'ativo' if (ep == 'relatorios.relatorio' and request.view_args.chave == c[0]) or (c[0] == 'apontamentos' and ep == 'relatorios.apontamentos') }}">{{ c[1] }}</a>{% endfor %}
+        {% endcall %}
+        {% endif %}
+        {% call pasta('Cadastros', '🗂', ['equipe.clientes', 'equipe.cliente', 'equipe.cliente_novo', 'equipe.contrato', 'equipe.contrato_novo', 'contratos.*', 'equipe.usuarios_clientes', 'equipe.equipe_lista', 'equipe.usuario_editar', 'equipe.acessos', 'equipe.importar', 'equipe.tipos_servico']) %}
+          {{ item('equipe.clientes', 'Clientes', ep in ('equipe.clientes', 'equipe.cliente', 'equipe.cliente_novo')) }}
+          {% if pode('contratos') %}{{ item('contratos.lista', 'Contratos', ep.startswith('contratos.') or ep in ('equipe.contrato', 'equipe.contrato_novo')) }}{% endif %}
+          {% if pode('clientes') %}{{ item('equipe.usuarios_clientes', 'Usuários de clientes') }}{% endif %}
+          {% if adm %}{{ item('equipe.equipe_lista', 'Recursos', ep in ('equipe.equipe_lista', 'equipe.usuario_editar')) }}{% endif %}
+          {% if pode('config') %}{{ item('equipe.tipos_servico', 'Tipos de serviço') }}{% endif %}
+          {% if pode('importar') %}{{ item('equipe.importar', 'Importar planilha') }}{% endif %}
+        {% endcall %}
         {% if pode('config') %}
-        <div class="sec">Configurações</div>
-        <a href="{{ url_for('equipe.config_sla') }}" class="{{ 'ativo' if ep == 'equipe.config_sla' }}">Prazos (SLA)</a>
-        <a href="{{ url_for('equipe.tipos_servico') }}" class="{{ 'ativo' if ep == 'equipe.tipos_servico' }}">Tipos de serviço</a>
-        <a href="{{ url_for('equipe.config_integracoes') }}" class="{{ 'ativo' if ep == 'equipe.config_integracoes' }}">Integrações</a>
-        <a href="{{ url_for('equipe.config_marca') }}" class="{{ 'ativo' if ep == 'equipe.config_marca' }}">Logo da empresa</a>
+        {% call pasta('Configurações', '⚙', ['equipe.config_sla', 'equipe.config_integracoes', 'equipe.config_marca']) %}
+          {{ item('equipe.config_sla', 'Prazos (SLA)') }}
+          {{ item('equipe.config_integracoes', 'Integrações') }}
+          {{ item('equipe.config_marca', 'Logo da empresa') }}
+        {% endcall %}
+        {% endif %}
+        {% if adm %}
+        {% call pasta('Administração', '🛡', ['equipe.acessos', 'adm.consultas', 'adm.banco']) %}
+          {{ item('equipe.acessos', 'Acessos por rotina') }}
+          {{ item('adm.consultas', 'Consultas SQL') }}
+          {{ item('adm.banco', 'Dicionário de dados') }}
+        {% endcall %}
         {% endif %}
       {% endif %}
     </nav>

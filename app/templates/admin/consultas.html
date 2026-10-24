@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}Consultas SQL{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Consultas SQL</h1><div class="muted">Somente leitura: a consulta roda numa transação que não grava nada, com limite de 20 segundos. Tela mostra até {{ limite }} linhas; o Excel, até 50 mil. Senhas e segredos aparecem mascarados. Toda execução fica registrada.</div></div>
+<a class="btn sec" href="{{ url_for('adm.banco') }}">Dicionário de dados</a></div>
+<div class="grid g-2-1">
+<div style="min-width:0">
+<form method="post" class="card">{{ m.csrf_input() }}
+  <label for="sql">SQL</label>
+  <textarea id="sql" name="sql" class="sql" spellcheck="false" rows="9" placeholder="SELECT numero, titulo, status FROM chamados ORDER BY numero DESC">{{ sql }}</textarea>
+  <div class="linha" style="margin-top:10px">
+    <button class="btn" name="acao" value="executar">▶ Executar</button>
+    <button class="btn sec" name="acao" value="excel">Exportar Excel</button>
+    <div style="flex:1;min-width:160px"><input type="text" name="nome" placeholder="Nome para salvar" aria-label="Nome da consulta"></div>
+    <button class="btn sec" name="acao" value="salvar">Salvar consulta</button>
+  </div>
+  <div class="muted small" style="margin-top:6px">Atalho: Ctrl+Enter executa.</div>
+</form>
+{% if erro %}<div class="card aviso erro">{{ erro }}</div>{% endif %}
+{% if resultado %}
+<div class="muted small" style="margin-bottom:6px">{{ resultado.linhas|length }} linha(s){% if resultado.truncou %} — mostrando as primeiras {{ limite }}; use Exportar Excel para ver mais{% endif %}</div>
+<div class="tabela resultado-sql">{% if resultado.colunas %}<table><thead><tr>{% for c in resultado.colunas %}<th>{{ c }}</th>{% endfor %}</tr></thead><tbody>
+{% for l in resultado.linhas %}<tr>{% for v in l %}<td>{% if v is none %}<span class="muted">null</span>{% else %}{{ v }}{% endif %}</td>{% endfor %}</tr>{% endfor %}
+</tbody></table>{% else %}<div class="vazio">A consulta não devolveu colunas.</div>{% endif %}</div>
+{% endif %}
+</div>
+<div style="min-width:0">
+<div class="card"><h2>Consultas salvas</h2>{% if salvas %}<ul class="lista-simples">{% for s in salvas %}<li><a href="{{ url_for('adm.consultas', salva=s.id) }}">{{ s.nome }}</a>
+<form method="post" style="display:inline">{{ m.csrf_input() }}<input type="hidden" name="acao" value="excluir"><input type="hidden" name="id" value="{{ s.id }}"><button class="link-btn" aria-label="Excluir {{ s.nome }}" onclick="return confirm('Excluir a consulta?')">×</button></form></li>{% endfor %}</ul>{% else %}<div class="muted small">Nenhuma ainda.</div>{% endif %}</div>
+<details class="card"><summary><b>Tabelas e colunas</b></summary><div class="small" style="margin-top:8px">{% for t in tabelas %}<p><b>{{ t.nome }}</b> <span class="muted">({{ t.tipo }})</span><br><span class="muted">{{ t.colunas }}</span></p>{% endfor %}</div></details>
+<details class="card"><summary><b>Últimas execuções</b></summary><div class="small" style="margin-top:8px">{% for h in historico %}<p><span class="muted">{{ h.executado_em|data_hora }} · {{ h.nome }} · {{ h.erro and 'erro' or (h.linhas ~ ' linha(s)') }}</span><br><code>{{ h.sql[:160] }}</code></p>{% endfor %}</div></details>
+</div></div>
+{% endblock %}

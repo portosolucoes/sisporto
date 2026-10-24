@@ -986,3 +986,211 @@ class TestEntrega3(Base):
         r = self.app.test_cli_runner().invoke(args=["banco-atualizar"])
         self.assertIn("restaurado", r.output)
         self.assertEqual(self.sql("SELECT perfil FROM usuarios WHERE id = %s", [adm_id])[0]["perfil"], "admin")
+
+
+class TestEntrega4(Base):
+    """Senha provisória, contratos, aprovação, privacidade, consultas SQL, dicionário, portal e menu."""
+
+    def tipo(self):
+        return str(self.sql("SELECT id FROM tipos_servico ORDER BY id LIMIT 1")[0]["id"])
+
+    def novo_recurso(self, email, perfil="financeiro"):
+        uid = self.sql("""INSERT INTO usuarios (nome, email, perfil, senha_hash)
+                          SELECT %s, %s, %s, senha_hash FROM usuarios WHERE id = %s RETURNING id""",
+                       [email.split("@")[0].title(), email, perfil, self.ids["adm"]])[0]["id"]
+        return uid
+
+    def test_senha_temporaria_cliente(self):
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        r = self.post(adm, f"/usuarios/{self.ids['maria']}", {"acao": "senha"}, follow_redirects=True)
+        temp = re.search(r"senha temporária de [^:]+: (\w+)", r.get_data(as_text=True), re.I).group(1)
+        c = self.app.test_client()
+        c.get("/entrar")
+        r = self.post(c, "/entrar", {"email": "maria@alfalog.com.br", "senha": f" {temp} "})
+        self.assertEqual(r.status_code, 302)
+        r = c.get("/portal/", follow_redirects=False)
+        self.assertIn("/conta/senha", r.headers.get("Location", ""))
+        tela = c.get("/conta/senha").get_data(as_text=True)
+        self.assertIn("Crie a sua senha", tela)
+        self.assertNotIn('name="atual"', tela)
+        r = self.post(c, "/conta/senha", {"nova": "MinhaSenhaNova123", "confirmacao": "MinhaSenhaNova123"})
+        self.assertEqual(r.status_code, 302)
+        self.assertFalse(self.sql("SELECT senha_provisoria FROM usuarios WHERE id = %s", [self.ids["maria"]])[0]
+                         ["senha_provisoria"])
+        self.assertEqual(c.get("/portal/").status_code, 200)
+        # troca normal exige a senha atual (e aceita espaços colados)
+        r = self.post(c, "/conta/senha", {"atual": "errada", "nova": "OutraSenha12345", "confirmacao": "OutraSenha12345"})
+        self.assertIn("Senha atual incorreta", r.get_data(as_text=True))
+        r = self.post(c, "/conta/senha", {"atual": " MinhaSenhaNova123 ", "nova": "OutraSenha12345",
+                                          "confirmacao": "OutraSenha12345"})
+        self.assertEqual(r.status_code, 302)
+        c2 = self.app.test_client()
+        c2.get("/entrar")
+        self.assertEqual(self.post(c2, "/entrar", {"email": "maria@alfalog.com.br",
+                                                   "senha": "OutraSenha12345"}).status_code, 302)
+
+    def test_contratos(self):
+        fin_id = self.novo_recurso("fin4@portosolucoes.com.br")
+        fin = self.cliente_http("fin4@portosolucoes.com.br")
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        self.assertEqual(tec.get("/contratos").status_code, 403)
+        self.assertEqual(fin.get("/contratos").status_code, 200)
+        self.assertIn("Pacote 40h", fin.get("/contratos?situacao=todos").get_data(as_text=True))
+        self.assertEqual(fin.get("/contratos/novo").status_code, 200)
+        r = self.post(fin, "/contratos/novo", {"cliente_id": str(self.ids["alfa"]), "tipo": "hora_avulsa",
+                                               "descricao": "Avulso 2026", "valor_hora": "200",
+                                               "data_inicio": "2026-10-01"})
+        self.assertEqual(r.status_code, 302)
+        ct = self.sql("SELECT id FROM contratos WHERE descricao = 'Avulso 2026'")[0]["id"]
+        volta = "/contratos?situacao=todos"
+        r = self.post(fin, f"/contratos/{ct}", {"tipo": "hora_avulsa", "descricao": "Avulso 2026 b", "valor_hora": "210",
+                                               "data_inicio": "2026-10-01", "ativo": "1", "voltar": volta})
+        self.assertEqual(r.headers["Location"], volta)
+        # bloqueando a rotina de contratos para o financeiro
+        self.sql("INSERT INTO permissoes (usuario_id, rotina, permitido) VALUES (%s, 'contratos', false)", [fin_id])
+        self.assertEqual(fin.get("/contratos").status_code, 403)
+        self.assertEqual(fin.get(f"/contratos/{ct}").status_code, 403)
+
+    def test_aprovacao_admin(self):
+        cid = self.sql("SELECT id FROM chamados ORDER BY id LIMIT 1")[0]["id"]
+        ids = [self.sql("""INSERT INTO apontamentos (usuario_id, chamado_id, data, minutos, descricao, tipo_servico_id)
+                           VALUES (%s, %s, current_date, 30, %s, %s) RETURNING id""",
+                        [self.ids["tec"], cid, f"ap{i}", self.tipo()])[0]["id"] for i in range(2)]
+        self.novo_recurso("fin5@portosolucoes.com.br")
+        for email in ("ana@portosolucoes.com.br", "fin5@portosolucoes.com.br"):
+            c = self.cliente_http(email)
+            self.assertEqual(c.get("/admin/aprovacao").status_code, 403)
+            self.assertEqual(self.post(c, "/horas/aprovar", {"ids": str(ids[0]), "acao": "aprovado"}).status_code, 403)
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        tela = adm.get("/admin/aprovacao").get_data(as_text=True)
+        self.assertIn("ap0", tela)
+        self.post(adm, "/admin/aprovacao", {"ids": str(ids[1]), "acao": "rejeitado"})
+        self.assertEqual(self.sql("SELECT status FROM apontamentos WHERE id = %s", [ids[1]])[0]["status"], "pendente")
+        self.post(adm, "/admin/aprovacao", {"ids": str(ids[1]), "acao": "rejeitado", "motivo": "Duplicado"})
+        self.post(adm, "/admin/aprovacao", {"ids": str(ids[0]), "acao": "aprovado"})
+        x = {r["id"]: r for r in self.sql("SELECT id, status, motivo_rejeicao FROM apontamentos WHERE id IN (%s,%s)", ids)}
+        self.assertEqual((x[ids[0]]["status"], x[ids[1]]["status"], x[ids[1]]["motivo_rejeicao"]),
+                         ("aprovado", "rejeitado", "Duplicado"))
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        hoje = self.sql("SELECT current_date AS d")[0]["d"]
+        self.assertIn("Duplicado", tec.get(f"/horas?semana={hoje}").get_data(as_text=True))
+
+    def test_privacidade(self):
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        for url in ["/equipe", "/equipe/acessos", f"/usuarios/{self.ids['adm']}/editar", "/admin/apontamentos",
+                    "/admin/consultas", "/admin/banco", "/relatorios/produtividade"]:
+            with self.subTest(url=url):
+                self.assertEqual(tec.get(url).status_code, 403)
+        cid = self.sql("SELECT id FROM chamados ORDER BY id LIMIT 1")[0]["id"]
+        self.sql("""INSERT INTO apontamentos (usuario_id, chamado_id, data, minutos, descricao, tipo_servico_id)
+                    VALUES (%s, %s, current_date, 45, 'segredo do admin', %s)""", [self.ids["adm"], cid, self.tipo()])
+        self.sql("INSERT INTO permissoes (usuario_id, rotina, permitido) VALUES (%s, 'relatorios', true)", [self.ids["tec"]])
+        r = tec.get(f"/relatorios/apontamentos?recurso={self.ids['adm']}&status=todos").get_data(as_text=True)
+        self.assertNotIn("segredo do admin", r)
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        self.assertIn("segredo do admin", adm.get("/relatorios/apontamentos?status=todos").get_data(as_text=True))
+        # o chamado continua mostrando as horas de todos (informação do ticket)
+        num = self.sql("SELECT numero FROM chamados WHERE id = %s", [cid])[0]["numero"]
+        self.assertIn("segredo do admin", tec.get(f"/chamados/{num}").get_data(as_text=True))
+
+    def test_consultas_sql(self):
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        r = self.post(adm, "/admin/consultas", {"sql": "SELECT nome, email, senha_hash FROM usuarios WHERE email LIKE '%%porto%%' ORDER BY id;"})
+        html = r.get_data(as_text=True)
+        self.assertIn("contato@portosolucoes.com.br", html)
+        self.assertIn("•••", html)
+        self.assertNotIn("scrypt:", html)
+        n = self.sql("SELECT count(*) AS n FROM clientes")[0]["n"]
+        for sql in ["DELETE FROM clientes", "SELECT 1; DELETE FROM clientes",
+                    "WITH x AS (DELETE FROM clientes RETURNING 1) SELECT count(*) FROM x",
+                    "SELECT set_config('x.y', 'z', false); UPDATE clientes SET ativo = false"]:
+            with self.subTest(sql=sql):
+                html = self.post(adm, "/admin/consultas", {"sql": sql}).get_data(as_text=True)
+                self.assertIn("aviso erro", html)
+        self.assertEqual(self.sql("SELECT count(*) AS n FROM clientes")[0]["n"], n)
+        r = self.post(adm, "/admin/consultas", {"sql": "SELECT numero, titulo FROM chamados", "acao": "excel"})
+        self.assertEqual(r.mimetype, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.post(adm, "/admin/consultas", {"sql": "SELECT 1 AS um", "acao": "salvar", "nome": "Teste"})
+        sid = self.sql("SELECT id FROM consultas_salvas WHERE nome = 'Teste'")[0]["id"]
+        self.assertIn("SELECT 1 AS um", adm.get(f"/admin/consultas?salva={sid}").get_data(as_text=True))
+        self.assertGreaterEqual(self.sql("SELECT count(*) AS n FROM consultas_log")[0]["n"], 5)
+        # a sessão segue funcionando depois das consultas
+        self.assertEqual(adm.get("/painel").status_code, 200)
+
+    def test_dicionario_e_pdfs(self):
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        html = adm.get("/admin/banco").get_data(as_text=True)
+        self.assertIn("apontamentos", html)
+        self.assertIn("Horas trabalhadas pelos recursos", html)
+        r = adm.get("/admin/banco?formato=pdf")
+        self.assertTrue(r.data.startswith(b"%PDF"))
+        for url in ["/relatorios/sla?formato=pdf", "/relatorios/apontamentos?formato=pdf",
+                    "/relatorios/prefaturamento?formato=pdf"]:
+            with self.subTest(url=url):
+                self.assertTrue(adm.get(url).data.startswith(b"%PDF"))
+        runner = self.app.test_cli_runner()
+        import tempfile, pathlib
+        with tempfile.TemporaryDirectory() as d:
+            arq = pathlib.Path(d) / "dic.pdf"
+            res = runner.invoke(args=["dicionario-pdf", str(arq)])
+            self.assertIn("gerado", res.output)
+            self.assertTrue(arq.read_bytes().startswith(b"%PDF"))
+
+    def test_portal_horas(self):
+        cid = self.sql("SELECT id FROM chamados WHERE cliente_id = %s ORDER BY id LIMIT 1", [self.ids["beta"]])[0]["id"]
+        self.sql("""INSERT INTO apontamentos (usuario_id, chamado_id, data, minutos, descricao, tipo_servico_id)
+                    VALUES (%s, %s, current_date, 75, 'Configuração do backup', %s)""", [self.ids["tec"], cid, self.tipo()])
+        c = self.cliente_http("joao@clinicabeta.com.br")
+        html = c.get("/portal/horas").get_data(as_text=True)
+        self.assertIn("Configuração do backup", html)
+        self.assertIn("Chamados e apontamentos", html)
+        self.assertIn("Resumo por chamado", c.get("/portal/horas?visao=sintetica").get_data(as_text=True))
+        self.assertTrue(c.get("/portal/horas?formato=pdf").data.startswith(b"%PDF"))
+        r = c.get("/portal/horas?formato=xlsx")
+        from openpyxl import load_workbook
+        import io
+        wb = load_workbook(io.BytesIO(r.data))
+        self.assertEqual(wb.sheetnames, ["Por chamado", "Apontamentos", "Por tipo de serviço"])
+        self.assertIn("Configuração do backup", [x.value for x in wb["Apontamentos"]["F"]])
+        # cliente de outra empresa não vê
+        m = self.cliente_http("maria@alfalog.com.br")
+        self.assertNotIn("Configuração do backup", m.get("/portal/horas").get_data(as_text=True))
+
+    def test_rotinas_no_cadastro_do_recurso(self):
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        tec_id = self.ids["tec"]
+        html = adm.get(f"/usuarios/{tec_id}/editar").get_data(as_text=True)
+        self.assertIn('name="rotinas"', html)
+        self.assertIn("só administrador", html)
+        u = self.sql("SELECT nome, email FROM usuarios WHERE id = %s", [tec_id])[0]
+        self.post(adm, f"/usuarios/{tec_id}/editar", {"nome": u["nome"], "email": u["email"], "perfil": "tecnico",
+                                                     "rotinas": ["horas", "contratos", "emails"]})
+        perm = {r["rotina"]: r["permitido"] for r in self.sql("SELECT rotina, permitido FROM permissoes WHERE usuario_id = %s",
+                                                               [tec_id])}
+        self.assertEqual(perm.get("contratos"), True)
+        self.assertEqual(perm.get("chamados"), False)
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        self.assertEqual(tec.get("/contratos").status_code, 200)
+        self.assertEqual(tec.get("/chamados").status_code, 403)
+        # admin: todas marcadas e travadas
+        outro = self.novo_recurso("adm4@portosolucoes.com.br", "admin")
+        html = adm.get(f"/usuarios/{outro}/editar").get_data(as_text=True)
+        self.assertEqual(html.count('name="rotinas"'), html.count('checked disabled'))
+        self.assertIn("todas</b> as rotinas", html)
+        # restaura
+        self.sql("DELETE FROM permissoes WHERE usuario_id = %s", [tec_id])
+
+    def test_menu_e_dashboard(self):
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        html = adm.get("/painel").get_data(as_text=True)
+        for pasta in ["Dashboards", "Atendimento", "Horas", "Relatórios", "Cadastros", "Configurações", "Administração"]:
+            self.assertIn(f'data-pasta="{pasta}"', html)
+        self.assertEqual(adm.get("/dashboard").status_code, 200)
+        self.novo_recurso("fin6@portosolucoes.com.br")
+        fin = self.cliente_http("fin6@portosolucoes.com.br")
+        self.assertEqual(fin.get("/dashboard").status_code, 200)
+        self.assertNotIn('data-pasta="Administração"', fin.get("/painel").get_data(as_text=True))
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        self.assertEqual(tec.get("/dashboard").status_code, 403)
+        cli = self.cliente_http("joao@clinicabeta.com.br")
+        self.assertIn('data-pasta="Relatórios"', cli.get("/portal/").get_data(as_text=True))

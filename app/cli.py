@@ -123,7 +123,7 @@ def registrar(app):
     def definir_senha(email):
         """Gera uma senha temporária para o usuário EMAIL."""
         senha = senha_temporaria()
-        n = db().run("UPDATE usuarios SET senha_hash = %s WHERE email = %s OR upper(codigo) = upper(%s)",
+        n = db().run("UPDATE usuarios SET senha_hash = %s, senha_provisoria = true WHERE email = %s OR upper(codigo) = upper(%s)",
                      [generate_password_hash(senha), email.lower(), email])
         db().commit()
         if not n:
@@ -138,13 +138,26 @@ def registrar(app):
         senha = senha_temporaria()
         email = email.strip().lower()
         h = generate_password_hash(senha)
-        codigo = db().val("""UPDATE usuarios SET perfil = 'admin', ativo = true, senha_hash = %s
+        codigo = db().val("""UPDATE usuarios SET perfil = 'admin', ativo = true, senha_hash = %s, senha_provisoria = true
                               WHERE email = %s AND perfil <> 'cliente' RETURNING codigo""", [h, email])
         if not codigo:
-            codigo = db().val("""INSERT INTO usuarios (nome, email, perfil, senha_hash) VALUES (%s, %s, 'admin', %s)
+            codigo = db().val("""INSERT INTO usuarios (nome, email, perfil, senha_hash, senha_provisoria) VALUES (%s, %s, 'admin', %s, true)
                                  RETURNING codigo""", [nome, email, h])
         db().commit()
         click.echo(f"Administrador {email} (código {codigo}) pronto. Senha temporária de {email}: {senha}")
+
+    @app.cli.command("dicionario-pdf")
+    @click.argument("arquivo", default="docs/dicionario-de-dados.pdf")
+    def dicionario_pdf(arquivo):
+        """Gera o dicionário de dados do banco em PDF."""
+        import datetime as dt
+        from . import dicionario, pdf
+        caminho = pathlib.Path(arquivo)
+        caminho.parent.mkdir(parents=True, exist_ok=True)
+        caminho.write_bytes(pdf.gerar("SisPorto – Dicionário de dados",
+                                      f"Estrutura do banco em {dt.date.today():%d/%m/%Y}",
+                                      dicionario.estrutura_pdf(dicionario.ler())))
+        click.echo(f"Dicionário gerado: {caminho}")
 
     @app.cli.command("demo")
     def demo():

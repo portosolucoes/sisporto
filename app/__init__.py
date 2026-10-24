@@ -51,7 +51,16 @@ def create_app(config: dict | None = None) -> Flask:
     @app.context_processor
     def _ctx():
         from .acessos import pode
-        return {"csrf": session.get("csrf", ""), "usuario": g.get("usuario"), "pode": pode}
+        from .relatorios import CATALOGO
+        u = g.get("usuario")
+        a_aprovar = 0
+        if u and u["perfil"] == "admin":
+            try:
+                a_aprovar = dbmod.db().val("SELECT count(*) FROM apontamentos WHERE status = 'pendente'") or 0
+            except dbmod.DatabaseError:
+                a_aprovar = 0
+        return {"csrf": session.get("csrf", ""), "usuario": u, "pode": pode,
+                "catalogo_relatorios": CATALOGO, "a_aprovar": a_aprovar}
 
     from .auth import bp as auth_bp, carregar_usuario
     from .rotas_equipe import bp as equipe_bp
@@ -61,6 +70,8 @@ def create_app(config: dict | None = None) -> Flask:
     from .anexos import bp as anexos_bp
     from .integracoes import bp as integracoes_bp
     from .rotas_gestao import bp as gestao_bp
+    from .rotas_contratos import bp as contratos_bp
+    from .rotas_admin import bp as adm_bp
 
     app.before_request(carregar_usuario)
     app.register_blueprint(auth_bp)
@@ -71,6 +82,8 @@ def create_app(config: dict | None = None) -> Flask:
     app.register_blueprint(anexos_bp)
     app.register_blueprint(integracoes_bp)
     app.register_blueprint(gestao_bp)
+    app.register_blueprint(contratos_bp)
+    app.register_blueprint(adm_bp)
 
     @app.get("/saude")
     def saude():

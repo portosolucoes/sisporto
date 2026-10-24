@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}Aprovação de horas{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Aprovação de horas</h1><div class="muted">Lançamentos pendentes dos recursos. Só horas aprovadas entram no pré-faturamento.</div></div>
+<a class="btn sec" href="{{ url_for('gestao.apontamentos') }}">Todos os apontamentos</a></div>
+<form method="get" class="card linha filtros">
+  <div><label>Recurso</label><select name="recurso"><option value="">Todos</option>{% for r in recursos %}<option value="{{ r.id }}" {{ 'selected' if f.recurso == r.id|string }}>{{ r.nome }}</option>{% endfor %}</select></div>
+  <div><label>Cliente</label><select name="cliente"><option value="">Todos</option>{% for c in clientes %}<option value="{{ c.id }}" {{ 'selected' if f.cliente == c.id|string }}>{{ c.nome }}</option>{% endfor %}</select></div>
+  <div><label>De</label><input type="date" name="de" value="{{ f.de }}"></div>
+  <div><label>Até</label><input type="date" name="ate" value="{{ f.ate }}"></div>
+  <button class="btn sec">Filtrar</button>
+</form>
+{% if por_recurso %}<div class="kpis">{% for nome, r in por_recurso.items() %}<div class="kpi"><div class="l">{{ nome }}</div><div class="n">{{ r.minutos|horas }}</div><div class="l">{{ r.n }} lançamento(s) · {{ r.fat|horas }} faturáveis</div></div>{% endfor %}</div>{% endif %}
+<form method="post">{{ m.csrf_input() }}
+<div class="tabela" style="margin-bottom:12px">{% if linhas %}<table><thead><tr><th><input type="checkbox" id="marcar-todos" aria-label="Marcar todos"></th><th>Data</th><th>Recurso</th><th>Cliente</th><th>Chamado / contrato</th><th>Tipo</th><th>O que foi feito</th><th class="num">Tempo</th><th>Fat.</th><th></th></tr></thead><tbody>
+{% for a in linhas %}<tr><td><input type="checkbox" name="ids" value="{{ a.id }}" aria-label="Selecionar"></td><td>{{ a.data|data }}</td><td>{{ a.recurso }}</td><td>{{ a.cliente or '—' }}</td>
+<td>{% if a.numero %}<a href="{{ url_for('equipe.chamado', numero=a.numero) }}">#{{ a.numero }}</a> <span class="small muted">{{ a.titulo }}</span>{% else %}<span class="small">{{ a.contrato or '—' }}</span>{% endif %}</td>
+<td class="small">{{ a.tipo or '—' }}</td><td>{{ a.descricao }}</td><td class="num">{{ a.minutos|horas }}</td><td>{{ 'Sim' if a.faturavel else 'Não' }}</td>
+<td><a class="btn sec peq" href="{{ url_for('gestao.apontamento_admin', ap_id=a.id) }}">Ajustar</a></td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="vazio">Nenhum lançamento pendente. 🎉</div>{% endif %}</div>
+{% if linhas %}<div class="linha"><button class="btn" name="acao" value="aprovado">Aprovar selecionados</button>
+<div style="flex:1;min-width:220px"><input type="text" name="motivo" placeholder="Motivo (obrigatório para rejeitar)" aria-label="Motivo da rejeição"></div>
+<button class="btn perigo" name="acao" value="rejeitado">Rejeitar selecionados</button></div>{% endif %}
+</form>
+{% endblock %}

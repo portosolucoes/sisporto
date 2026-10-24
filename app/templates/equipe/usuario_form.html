@@ -19,6 +19,19 @@
   <div class="campo"><label class="check"><input type="checkbox" name="recebe_nps" value="1" {{ 'checked' if u.recebe_nps }}> Recebe a pesquisa de satisfação (NPS) mensal</label></div>
   {% endif %}
   <div class="campo"><label>Observações</label><textarea name="observacoes" style="min-height:70px">{{ u.observacoes or '' }}</textarea></div>
+  {% if acessos is not none %}
+  <h2 id="rotinas" style="margin-top:22px">Perfil e rotinas de acesso</h2>
+  <div class="campo" style="max-width:320px"><label>Perfil</label>
+    {% if pode_perfil %}<select name="perfil" id="perfil-recurso">{% for p in ['tecnico','financeiro','admin'] %}<option value="{{ p }}" {{ 'selected' if u.perfil == p }}>{{ p|rotulo('perfil') }}</option>{% endfor %}</select>
+    {% else %}<input type="text" value="{{ u.perfil|rotulo('perfil') }}" disabled><div class="ajuda">{{ 'O administrador master é sempre administrador.' if u.email == config.ADMIN_MASTER else 'Você não pode alterar o seu próprio perfil.' }}</div>{% endif %}
+  </div>
+  <div class="ajuda" id="nota-admin" {{ 'hidden' if u.perfil != 'admin' }}>Administrador tem acesso a <b>todas</b> as rotinas.</div>
+  <div class="rotinas" data-admin="{{ 1 if u.perfil == 'admin' else 0 }}">
+  {% for r in acessos %}<label class="check rotina">
+    <input type="checkbox" name="rotinas" value="{{ r.chave }}" {{ 'checked' if r.marcado }} {{ 'disabled' if r.so_admin or u.perfil == 'admin' }} data-so-admin="{{ 1 if r.so_admin else 0 }}" data-perfis="{{ r.perfis }}">
+    <span>{{ r.nome }}{% if r.so_admin %} <span class="selo">só administrador</span>{% elif r.marcado != r.padrao and u.perfil != 'admin' %} <span class="selo warn">personalizado</span>{% endif %}</span></label>{% endfor %}
+  </div>
+  {% endif %}
   {% if u.perfil != 'cliente' and u.totp_ativo and usuario.perfil == 'admin' %}
   <div class="campo"><label class="check"><input type="checkbox" name="desativar_2fa" value="1"> Desativar a verificação em duas etapas (o recurso perdeu o celular)</label></div>
   {% endif %}

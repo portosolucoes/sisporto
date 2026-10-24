@@ -163,6 +163,29 @@ class Connection:
         finally:
             _lib.PQclear(res)
 
+    def execute_bruto(self, sql: str):
+        """Executa SQL sem tratar '%' (consultas do administrador). Devolve (colunas, linhas como tuplas)."""
+        if not self._in_tx:
+            _lib.PQclear(self._run("BEGIN"))
+            self._in_tx = True
+        res = self._run(sql)
+        try:
+            nf, nt = _lib.PQnfields(res), _lib.PQntuples(res)
+            cols = [(_lib.PQfname(res, j).decode(), _PARSERS.get(_lib.PQftype(res, j))) for j in range(nf)]
+            rows = []
+            for i in range(nt):
+                row = []
+                for j, (_, parse) in enumerate(cols):
+                    if _lib.PQgetisnull(res, i, j):
+                        row.append(None)
+                    else:
+                        v = _lib.PQgetvalue(res, i, j).decode()
+                        row.append(parse(v) if parse else v)
+                rows.append(tuple(row))
+            return [c[0] for c in cols], rows
+        finally:
+            _lib.PQclear(res)
+
     def commit(self):
         if self._in_tx:
             _lib.PQclear(self._run("COMMIT"))

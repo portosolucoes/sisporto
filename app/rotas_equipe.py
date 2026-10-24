@@ -9,7 +9,7 @@ from werkzeug.security import generate_password_hash
 
 from . import anexos as anx
 from . import chamados as ch
-from .acessos import eh_master, pode, requer
+from .acessos import ROTINAS, SO_ADMIN, eh_admin, eh_master, padrao, pode, requer, salvar_permissoes
 from .auth import admin
 from .auth import equipe
 from .db import IntegrityError, db
@@ -58,7 +58,7 @@ def painel():
                                 WHERE usuario_id = %s AND data >= %s AND status <> 'rejeitado'""",
                             [uid, inicio_semana])
     pendentes = db().val("SELECT count(*) FROM apontamentos WHERE status = 'pendente'") \
-        if pode("aprovar_horas") else None
+        if eh_admin() else None
     return render_template("equipe/painel.html", resumo=resumo, meus=meus, fila=fila,
                            minhas_horas=minhas_horas, pendentes=pendentes)
 
@@ -385,6 +385,11 @@ def cliente(cliente_id):
                            responsavel=responsavel)
 
 
+def _voltar(padrao_):
+    v = request.values.get("voltar") or ""
+    return v if v.startswith("/") and not v.startswith("//") else padrao_
+
+
 CAMPOS_CONTRATO = ["tipo", "descricao", "valor_mensal", "franquia_horas", "valor_hora", "horas_pacote",
                    "valor_total", "data_inicio", "data_fim", "dia_vencimento", "indice_reajuste", "mes_reajuste",
                    "sla_politica_id", "observacoes", "tipo_servico_id"]
@@ -431,7 +436,7 @@ def _dados_contrato(form):
 
 
 @bp.route("/clientes/<int:cliente_id>/contratos/novo", methods=["GET", "POST"])
-@requer("clientes")
+@requer("contratos")
 def contrato_novo(cliente_id):
     c = db().one("SELECT * FROM clientes WHERE id = %s", [cliente_id]) or abort(404)
     if request.method == "POST":
@@ -441,18 +446,18 @@ def contrato_novo(cliente_id):
                          VALUES (%s, {', '.join(['%s'] * len(CAMPOS_CONTRATO))})""",
                      [cliente_id] + [v[k] for k in CAMPOS_CONTRATO])
             flash("Contrato incluído.", "ok")
-            return redirect(url_for("equipe.cliente", cliente_id=cliente_id))
+            return redirect(_voltar(url_for("equipe.cliente", cliente_id=cliente_id)))
         except ValueError as e:
             flash(str(e), "erro")
         except IntegrityError:
             db().rollback()
             flash("Dados do contrato inconsistentes. Confira os valores.", "erro")
     return render_template("equipe/contrato_form.html", cliente=c, ct=request.form, novo=True,
-                           politicas=_politicas(), tipos=_tipos_servico())
+                           politicas=_politicas(), tipos=_tipos_servico(), voltar=_voltar(""))
 
 
 @bp.route("/contratos/<int:contrato_id>", methods=["GET", "POST"])
-@requer("clientes")
+@requer("contratos")
 def contrato(contrato_id):
     ct = db().one("SELECT * FROM contratos WHERE id = %s", [contrato_id]) or abort(404)
     c = db().one("SELECT * FROM clientes WHERE id = %s", [ct["cliente_id"]])
@@ -463,7 +468,7 @@ def contrato(contrato_id):
             db().run(f"UPDATE contratos SET {sets}, ativo = %s WHERE id = %s",
                      [v[k] for k in CAMPOS_CONTRATO] + [request.form.get("ativo") == "1", contrato_id])
             flash("Contrato atualizado.", "ok")
-            return redirect(url_for("equipe.cliente", cliente_id=c["id"]))
+            return redirect(_voltar(url_for("equipe.cliente", cliente_id=c["id"])))
         except ValueError as e:
             flash(str(e), "erro")
         except IntegrityError:
@@ -471,7 +476,7 @@ def contrato(contrato_id):
             flash("Dados do contrato inconsistentes. Confira os valores.", "erro")
         ct = dict(request.form)
     return render_template("equipe/contrato_form.html", cliente=c, ct=ct, novo=False, contrato_id=contrato_id,
-                           politicas=_politicas(), tipos=_tipos_servico())
+                           politicas=_politicas(), tipos=_tipos_servico(), voltar=_voltar(""))
 
 
 @bp.post("/clientes/<int:cliente_id>/contatos")
@@ -492,8 +497,8 @@ def contato_novo(cliente_id):
     senha = _senha_temporaria()
     try:
         codigo = db().val("""INSERT INTO usuarios (nome, email, perfil, cliente_id, telefone, cargo, recebe_nps,
-                                                   senha_hash)
-                             VALUES (%s,%s,'cliente',%s,%s,%s,%s,%s) RETURNING codigo""",
+                                                   senha_hash, senha_provisoria)
+                             VALUES (%s,%s,'cliente',%s,%s,%s,%s,%s,true) RETURNING codigo""",
                           [nome, email, cliente_id, (request.form.get("telefone") or "").strip() or None,
                            (request.form.get("cargo") or "").strip() or None, request.form.get("recebe_nps") == "1",
                            generate_password_hash(senha)])
@@ -527,7 +532,7 @@ def usuarios_clientes():
 # Usuários (equipe e contatos): ativar, perfil, nova senha
 # =============================================================================
 @bp.route("/equipe", methods=["GET", "POST"])
-@requer("equipe")
+@admin
 def equipe_lista():
     if request.method == "POST":
         nome = (request.form.get("nome") or "").strip()
@@ -541,12 +546,14 @@ def equipe_lista():
             try:
                 senha = senha_temporaria()
                 custo = parse_decimal(request.form.get("custo_hora"))
-                db().run("""INSERT INTO usuarios (nome, email, perfil, senha_hash, custo_hora, cargo)
-                            VALUES (%s,%s,%s,%s,%s,%s)""",
-                         [nome, email, perfil, generate_password_hash(senha), custo,
-                          (request.form.get("cargo") or "").strip() or None])
-                flash(f"{nome} incluído. Senha temporária: {senha} — informe à pessoa e peça para trocar "
-                      f"no primeiro acesso.", "ok")
+                novo_id = db().val("""INSERT INTO usuarios (nome, email, perfil, senha_hash, custo_hora, cargo,
+                                                           senha_provisoria)
+                                      VALUES (%s,%s,%s,%s,%s,%s,true) RETURNING id""",
+                                   [nome, email, perfil, generate_password_hash(senha), custo,
+                                    (request.form.get("cargo") or "").strip() or None])
+                flash(f"{nome} incluído. Senha temporária: {senha} — informe à pessoa; no primeiro acesso o "
+                      f"sistema pede uma senha nova. Confira abaixo as rotinas que ela pode acessar.", "ok")
+                return redirect(url_for("equipe.usuario_editar", usuario_id=novo_id) + "#rotinas")
             except IntegrityError:
                 db().rollback()
                 flash("Já existe um recurso com esse e-mail.", "erro")
@@ -556,7 +563,7 @@ def equipe_lista():
 
 
 @bp.route("/equipe/acessos", methods=["GET", "POST"])
-@requer("equipe")
+@admin
 def acessos():
     from .acessos import ROTINAS, padrao
     usuarios = db().all("""SELECT id, nome, email, perfil, ativo FROM usuarios
@@ -584,7 +591,7 @@ def _pode_mexer(u):
         return pode("clientes")
     if eh_master(u) and u["id"] != g.usuario["id"]:
         return False  # só o próprio master altera a conta master
-    return pode("equipe") and (u["perfil"] != "admin" or g.usuario["perfil"] == "admin")
+    return eh_admin()
 
 
 @bp.route("/usuarios/<int:usuario_id>/editar", methods=["GET", "POST"])
@@ -612,6 +619,14 @@ def usuario_editar(usuario_id):
                       custo, u["perfil"] == "cliente" and f.get("recebe_nps") == "1", usuario_id])
             if u["perfil"] != "cliente" and f.get("desativar_2fa") == "1" and g.usuario["perfil"] == "admin":
                 db().run("UPDATE usuarios SET totp_ativo = false, totp_segredo = NULL WHERE id = %s", [usuario_id])
+            if u["perfil"] != "cliente" and eh_admin():
+                perfil = f.get("perfil") or u["perfil"]
+                if perfil not in ("admin", "tecnico", "financeiro") or eh_master(u) or u["id"] == g.usuario["id"]:
+                    perfil = u["perfil"]  # ninguém muda o próprio perfil; o master é sempre admin
+                if perfil != u["perfil"]:
+                    db().run("UPDATE usuarios SET perfil = %s WHERE id = %s", [perfil, usuario_id])
+                if perfil != "admin":
+                    salvar_permissoes({**u, "perfil": perfil}, set(f.getlist("rotinas")))
             flash("Cadastro atualizado.", "ok")
             if u["perfil"] == "cliente":
                 return redirect(url_for("equipe.cliente", cliente_id=u["cliente_id"]))
@@ -625,7 +640,14 @@ def usuario_editar(usuario_id):
                                             "custo_hora")}, "recebe_nps": f.get("recebe_nps") == "1"}
     cliente = db().one("SELECT id, coalesce(nome_fantasia, razao_social) AS nome FROM clientes WHERE id = %s",
                        [u["cliente_id"]]) if u.get("cliente_id") else None
-    return render_template("equipe/usuario_form.html", u=u, cliente=cliente)
+    acessos = None
+    if u["perfil"] != "cliente":
+        acessos = [{"chave": r, "nome": d, "marcado": pode(r, u), "padrao": padrao(u["perfil"], r), "so_admin": False,
+                    "perfis": " ".join(sorted(ps))} for r, (d, ps) in ROTINAS.items()]
+        acessos += [{"chave": r, "nome": d, "marcado": u["perfil"] == "admin", "padrao": None, "so_admin": True, "perfis": ""}
+                    for r, d in SO_ADMIN.items()]
+    return render_template("equipe/usuario_form.html", u=u, cliente=cliente, acessos=acessos,
+                           pode_perfil=eh_admin() and not eh_master(u) and u["id"] != g.usuario["id"])
 
 
 @bp.post("/usuarios/<int:usuario_id>")
@@ -644,7 +666,8 @@ def usuario_atualizar(usuario_id):
             flash(f"{u['nome']} {'desativado' if u['ativo'] else 'reativado'}.", "ok")
     elif acao == "senha":
         senha = _senha_temporaria()
-        db().run("UPDATE usuarios SET senha_hash = %s WHERE id = %s", [generate_password_hash(senha), usuario_id])
+        db().run("UPDATE usuarios SET senha_hash = %s, senha_provisoria = true WHERE id = %s",
+                 [generate_password_hash(senha), usuario_id])
         flash(f"Nova senha temporária de {u['email']}: {senha} — informe ao usuário e peça para trocar.", "ok")
     elif acao == "link":
         from .auth import enviar_link_senha
@@ -678,7 +701,7 @@ def horas():
         base = _hoje()
     inicio = base - dt.timedelta(days=base.weekday())
     fim = inicio + dt.timedelta(days=6)
-    if not (pode("horas") or pode("aprovar_horas")):
+    if not (pode("horas") or eh_admin()):
         abort(403)
     minhas = db().all("""
         SELECT a.*, c.numero, c.titulo, cl.nome_fantasia AS cliente, ts.nome AS tipo_servico, ct.descricao AS contrato
@@ -689,16 +712,7 @@ def horas():
           LEFT JOIN clientes cl ON cl.id = coalesce(c.cliente_id, ct.cliente_id)
          WHERE a.usuario_id = %s AND a.data BETWEEN %s AND %s
          ORDER BY a.data, a.id""", [g.usuario["id"], inicio, fim])
-    pendentes = []
-    if pode("aprovar_horas"):
-        pendentes = db().all("""
-            SELECT a.*, u.nome AS tecnico, c.numero, c.titulo, cl.nome_fantasia AS cliente, ts.nome AS tipo_servico
-              FROM apontamentos a JOIN usuarios u ON u.id = a.usuario_id
-              LEFT JOIN tipos_servico ts ON ts.id = a.tipo_servico_id
-              LEFT JOIN chamados c ON c.id = a.chamado_id
-              LEFT JOIN contratos ct ON ct.id = a.contrato_id
-              LEFT JOIN clientes cl ON cl.id = coalesce(c.cliente_id, ct.cliente_id)
-             WHERE a.status = 'pendente' ORDER BY a.data, u.nome""")
+    pendentes = db().val("SELECT count(*) FROM apontamentos WHERE status = 'pendente'") if eh_admin() else 0
     contratos = db().all("""SELECT ct.id, ct.cliente_id, ct.descricao, ct.tipo FROM contratos ct
                               JOIN clientes c ON c.id = ct.cliente_id WHERE ct.ativo AND c.ativo ORDER BY ct.descricao""")
     return render_template("equipe/horas.html", minhas=minhas, pendentes=pendentes, inicio=inicio, fim=fim,
@@ -707,7 +721,7 @@ def horas():
 
 
 @bp.post("/horas/aprovar")
-@requer("aprovar_horas")
+@admin
 def horas_aprovar():
     ids = [int(i) for i in request.form.getlist("ids") if i.isdigit()]
     acao = request.form.get("acao")
@@ -719,14 +733,14 @@ def horas_aprovar():
             n += db().run("""UPDATE apontamentos SET status = %s, aprovado_por = %s
                               WHERE id = %s AND status = 'pendente'""", [acao, g.usuario["id"], i])
         flash(f"{n} lançamento(s) {'aprovado(s)' if acao == 'aprovado' else 'rejeitado(s)'}.", "ok")
-    return redirect(url_for("equipe.horas"))
+    return redirect(_voltar(url_for("gestao.aprovacao")))
 
 
 @bp.post("/horas/<int:apontamento_id>/excluir")
 @equipe
 def hora_excluir(apontamento_id):
     a = db().one("SELECT * FROM apontamentos WHERE id = %s", [apontamento_id]) or abort(404)
-    if a["usuario_id"] != g.usuario["id"] and not pode("aprovar_horas"):
+    if a["usuario_id"] != g.usuario["id"] and not eh_admin():
         abort(403)
     if a["status"] != "pendente":
         flash("Só é possível excluir lançamentos ainda não aprovados.", "erro")

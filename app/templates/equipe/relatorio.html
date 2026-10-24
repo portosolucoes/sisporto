@@ -11,7 +11,7 @@
 {%- endmacro %}
 {% block conteudo %}
 <div class="topo"><div><div class="muted small"><a href="{{ url_for('relatorios.indice') }}">Relatórios</a></div><h1>{{ item[1] }}</h1><div class="muted">{{ item[2] }}</div></div>
-<a class="btn sec" href="{{ request.full_path }}{{ '&' if '?' in request.full_path else '?' }}formato=xlsx">Exportar Excel</a></div>
+<a class="btn sec" href="{{ request.full_path }}{{ '&' if '?' in request.full_path else '?' }}formato=xlsx">Exportar Excel</a> <a class="btn sec" href="{{ request.full_path }}{{ '&' if '?' in request.full_path else '?' }}formato=pdf">Exportar PDF</a></div>
 <form class="linha card" method="get">
   {% if chave == 'prefaturamento' %}
   <div><label>Mês</label><input type="month" name="mes" value="{{ dados.mes.strftime('%Y-%m') }}"></div>

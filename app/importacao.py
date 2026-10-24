@@ -258,8 +258,8 @@ def importar(conteudo: bytes):
     acessos = []
     for p in contatos:
         senha = senha_temporaria()
-        db().run("""INSERT INTO usuarios (nome, email, perfil, cliente_id, telefone, senha_hash)
-                    VALUES (%s,%s,'cliente',%s,%s,%s)""",
+        db().run("""INSERT INTO usuarios (nome, email, perfil, cliente_id, telefone, senha_hash, senha_provisoria)
+                    VALUES (%s,%s,'cliente',%s,%s,%s,true)""",
                  [p["nome"], p["email"], cid(p["cli"]), p["tel"], generate_password_hash(senha)])
         acessos.append({"nome": p["nome"], "email": p["email"], "senha": senha})
     resumo = {"clientes": len(clientes), "contratos": len(contratos), "contatos": len(contatos)}

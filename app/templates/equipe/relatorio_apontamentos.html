@@ -2,7 +2,7 @@
 {% block titulo %}Relatório de apontamentos{% endblock %}
 {% block conteudo %}
 <div class="topo"><div><h1>Relatório de apontamentos</h1><div class="muted">Horas lançadas por período, cliente, recurso e tipo de serviço.</div></div>
-<a class="btn sec" href="{{ request.full_path }}{{ '&' if '?' in request.full_path else '?' }}formato=xlsx">Exportar Excel</a></div>
+<a class="btn sec" href="{{ request.full_path }}{{ '&' if '?' in request.full_path else '?' }}formato=xlsx">Exportar Excel</a> <a class="btn sec" href="{{ request.full_path }}{{ '&' if '?' in request.full_path else '?' }}formato=pdf">Exportar PDF</a></div>
 <form class="linha card" method="get">
   <div><label>De</label><input type="date" name="de" value="{{ f.de }}"></div>
   <div><label>Até</label><input type="date" name="ate" value="{{ f.ate }}"></div>

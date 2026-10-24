@@ -21,7 +21,7 @@
       <p><a href="{{ url_for('equipe.horas') }}">Ver lançamentos →</a></p></div>
     {% if pendentes is not none %}
     <div class="card"><h2>Horas para aprovar</h2><div class="kpi {{ 'warn' if pendentes }}" style="border:0;padding:0"><div class="n">{{ pendentes }}</div><div class="l">lançamentos pendentes</div></div>
-      <p><a href="{{ url_for('equipe.horas') }}#aprovar">Revisar e aprovar →</a></p></div>
+      <p><a href="{{ url_for('gestao.aprovacao') }}">Revisar e aprovar →</a></p></div>
     {% endif %}
   </div>
 </div>

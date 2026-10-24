@@ -56,6 +56,17 @@ class _Conn:
     def run(self, sql, params=()):
         return self._exec(sql, params)[1]
 
+    def bruto(self, sql):
+        """SQL do administrador, sem tratar '%'. Devolve (colunas, linhas como tuplas)."""
+        if _DRIVER == "psycopg":
+            from psycopg.rows import tuple_row
+            cur = self._c.cursor(row_factory=tuple_row)
+            cur.execute(sql)
+            if not cur.description:
+                return [], []
+            return [d.name for d in cur.description], cur.fetchall()
+        return self._c.execute_bruto(sql)
+
     _uid = None
 
     def set_usuario(self, usuario_id):

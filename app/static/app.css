@@ -162,3 +162,27 @@ a.rel-card{display:block;color:inherit;transition:border-color .15s}a.rel-card:h
 .cronometro.esgotado{background:var(--bad-soft);color:var(--bad)}
 .erro-txt{color:var(--bad)}
 tr.sel td{background:var(--sel,rgba(37,99,235,.08))}
+.rotinas{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px 18px;margin:8px 0 16px}
+.rotinas .rotina{align-items:flex-start;gap:8px;padding:6px 8px;border:1px solid var(--borda,#e3e8ef);border-radius:8px}
+.rotinas .rotina input{margin-top:3px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:18px}
+.barra-linha{display:grid;grid-template-columns:minmax(120px,200px) 1fr 70px;gap:12px;align-items:center;margin:6px 0}
+.barra-linha .barra{margin:0}
+.barra-linha b{text-align:right}
+.grupo-chamado summary{display:flex;justify-content:space-between;gap:12px;cursor:pointer;flex-wrap:wrap}
+tr.total td{background:var(--bg,#f4f7fb);border-top:2px solid var(--line)}
+textarea.sql{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;min-height:170px}
+.resultado-sql td{white-space:nowrap;max-width:420px;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+.lista-simples{list-style:none;padding:0;margin:0}.lista-simples li{padding:6px 0;border-bottom:1px solid var(--line)}
+.link-btn{background:none;border:0;color:var(--bad);cursor:pointer;font-size:16px;padding:0 6px}
+.aviso.erro{border-color:var(--bad);color:var(--bad)}
+/* menu em pastas */
+.side nav details.pasta{margin:2px 0}
+.side nav details.pasta>summary{list-style:none;cursor:pointer;padding:8px 10px;border-radius:8px;color:#c9d5e6;font-size:13px;font-weight:600;letter-spacing:.02em;display:flex;gap:8px;align-items:center}
+.side nav details.pasta>summary::-webkit-details-marker{display:none}
+.side nav details.pasta>summary::after{content:"▸";margin-left:auto;transition:transform .15s;opacity:.7}
+.side nav details.pasta[open]>summary::after{transform:rotate(90deg)}
+.side nav details.pasta>summary:hover{background:rgba(255,255,255,.06)}
+.side nav details.pasta>div{padding-left:14px;border-left:1px solid rgba(255,255,255,.12);margin-left:16px}
+.side nav details.pasta>div a{font-size:14px;padding:7px 10px}
+.contador{background:#e0a100;color:#1b1b1b;border-radius:999px;font-size:11px;font-weight:700;padding:1px 7px;margin-left:4px}

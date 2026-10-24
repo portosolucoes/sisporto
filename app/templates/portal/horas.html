@@ -1,10 +1,44 @@
 {% extends "base.html" %}
 {% block titulo %}Relatório de horas{% endblock %}
 {% block conteudo %}
-<div class="topo"><div><h1>Relatório de horas</h1><div class="muted">{{ mes.strftime('%m/%Y') }}</div></div>
-<form method="get" class="linha"><div><label>Mês</label><select name="mes" onchange="this.form.submit()">{% set atual = mes.strftime('%Y-%m') %}{% if atual not in meses %}<option>{{ atual }}</option>{% endif %}{% for x in meses %}<option value="{{ x }}" {{ 'selected' if x == atual }}>{{ x[5:] }}/{{ x[:4] }}</option>{% endfor %}</select></div></form></div>
-<div class="grid g2" style="margin-bottom:18px"><div class="kpi"><div class="l">Total no mês</div><div class="n">{{ total|horas }}</div></div><div class="kpi"><div class="l">Faturáveis</div><div class="n">{{ faturaveis|horas }}</div></div></div>
-<div class="tabela">{% if linhas %}<table><thead><tr><th>Data</th><th>Chamado</th><th>Tipo</th><th>Atividade</th><th>Recurso</th><th class="num">Tempo</th></tr></thead><tbody>
-{% for l in linhas %}<tr><td>{{ l.data|data }}</td><td>{% if l.numero %}<a href="{{ url_for('portal.chamado', numero=l.numero) }}">#{{ l.numero }}</a>{% else %}<span class="small">{{ l.contrato }}</span>{% endif %}</td><td class="small">{{ l.tipo_servico or '—' }}</td><td>{{ l.descricao }}{% if not l.faturavel %} <span class="muted small">(cortesia)</span>{% endif %}{% if l.status == 'pendente' %} <span class="selo pendente">Em revisão</span>{% endif %}</td><td>{{ l.tecnico }}</td><td class="num">{{ l.minutos|horas }}</td></tr>{% endfor %}
-</tbody></table>{% else %}<div class="vazio">Nenhuma hora registrada neste mês.</div>{% endif %}</div>
+{% set q = request.query_string.decode() %}
+<div class="topo"><div><h1>Relatório de horas</h1><div class="muted">{{ f.de|data }} a {{ f.ate|data }}</div></div>
+<div><a class="btn sec" href="?{{ q }}{{ '&' if q }}formato=xlsx">Exportar Excel</a> <a class="btn sec" href="?{{ q }}{{ '&' if q }}formato=pdf">Exportar PDF</a></div></div>
+<form method="get" class="card linha filtros">
+  <div><label>Mês</label><select name="mes" onchange="this.form.de.value='';this.form.ate.value='';this.form.submit()"><option value="">Período livre</option>{% for x in meses %}<option value="{{ x }}" {{ 'selected' if request.args.mes == x }}>{{ x[5:] }}/{{ x[:4] }}</option>{% endfor %}</select></div>
+  <div><label>De</label><input type="date" name="de" value="{{ f.de.isoformat() }}" onchange="this.form.mes.value=''"></div>
+  <div><label>Até</label><input type="date" name="ate" value="{{ f.ate.isoformat() }}" onchange="this.form.mes.value=''"></div>
+  {% if contratos|length > 1 %}<div><label>Contrato</label><select name="contrato"><option value="">Todos</option>{% for c in contratos %}<option value="{{ c.id }}" {{ 'selected' if f.contrato == c.id }}>{{ c.descricao }}</option>{% endfor %}</select></div>{% endif %}
+  <div><label>Tipo de serviço</label><select name="tipo"><option value="">Todos</option>{% for t in tipos %}<option value="{{ t.id }}" {{ 'selected' if f.tipo == t.id }}>{{ t.nome }}</option>{% endfor %}</select></div>
+  <div style="width:110px"><label>Chamado nº</label><input type="text" name="chamado" inputmode="numeric" value="{{ f.chamado or '' }}"></div>
+  <div><label>Visão</label><select name="visao"><option value="analitica" {{ 'selected' if f.visao == 'analitica' }}>Analítica (detalhe)</option><option value="sintetica" {{ 'selected' if f.visao == 'sintetica' }}>Sintética (resumo)</option></select></div>
+  <button class="btn sec">Aplicar</button>
+</form>
+<div class="grid g4" style="margin-bottom:18px">
+  <div class="kpi"><div class="l">Total no período</div><div class="n">{{ total|horas }}</div></div>
+  <div class="kpi"><div class="l">Faturáveis</div><div class="n">{{ faturaveis|horas }}</div></div>
+  <div class="kpi"><div class="l">Chamados atendidos</div><div class="n">{{ por_chamado|selectattr('numero')|list|length }}</div></div>
+  <div class="kpi"><div class="l">Lançamentos</div><div class="n">{{ linhas|length }}</div></div>
+</div>
+{% if por_tipo %}<div class="card"><h2>Por tipo de serviço</h2>
+{% for t in por_tipo %}{% set pct = (100 * t.minutos / total)|round(1) if total else 0 %}
+<div class="barra-linha"><span>{{ t.nome }}</span><div class="barra"><span style="width:{{ pct }}%"></span></div><b>{{ t.minutos|horas }}</b></div>{% endfor %}</div>{% endif %}
+
+<h2>{{ 'Chamados e apontamentos' if f.visao == 'analitica' else 'Resumo por chamado' }}</h2>
+{% if not por_chamado %}<div class="card vazio">Nenhuma hora registrada no período.</div>{% endif %}
+{% if f.visao == 'sintetica' and por_chamado %}
+<div class="tabela"><table><thead><tr><th>Chamado</th><th>Título</th><th>Situação</th><th>Contrato</th><th class="num">Lanç.</th><th>Período</th><th class="num">Horas</th><th class="num">Faturáveis</th></tr></thead><tbody>
+{% for c in por_chamado %}<tr><td>{% if c.numero %}<a href="{{ url_for('portal.chamado', numero=c.numero) }}">#{{ c.numero }}</a>{% else %}—{% endif %}</td><td>{{ c.titulo }}</td><td>{{ c.status|rotulo('status') if c.status else '—' }}</td><td class="small">{{ c.contrato }}</td><td class="num">{{ c.lancamentos }}</td><td class="small">{{ c.primeiro|data }} – {{ c.ultimo|data }}</td><td class="num">{{ c.minutos|horas }}</td><td class="num">{{ c.faturavel|horas }}</td></tr>{% endfor %}
+<tr class="total"><td></td><td><b>Total</b></td><td></td><td></td><td class="num">{{ linhas|length }}</td><td></td><td class="num"><b>{{ total|horas }}</b></td><td class="num"><b>{{ faturaveis|horas }}</b></td></tr>
+</tbody></table></div>
+{% elif por_chamado %}
+{% for c in por_chamado %}
+<details class="card grupo-chamado" open><summary><span>{% if c.numero %}<a href="{{ url_for('portal.chamado', numero=c.numero) }}">#{{ c.numero }}</a> · {% endif %}<b>{{ c.titulo }}</b>
+  <span class="muted small">{{ c.status|rotulo('status') if c.status else '' }} · {{ c.contrato }}</span></span><span class="num"><b>{{ c.minutos|horas }}</b> <span class="muted small">({{ c.lancamentos }} lanç.)</span></span></summary>
+<div class="tabela" style="margin-top:10px"><table><thead><tr><th>Data</th><th>Tipo</th><th>Atividade</th><th>Recurso</th><th class="num">Tempo</th></tr></thead><tbody>
+{% for l in detalhe[c.numero] %}<tr><td>{{ l.data|data }}</td><td class="small">{{ l.tipo }}</td><td>{{ l.descricao }}{% if not l.faturavel %} <span class="muted small">(cortesia)</span>{% endif %}{% if l.status == 'pendente' %} <span class="selo pendente">Em revisão</span>{% endif %}</td><td class="small">{{ l.recurso }}</td><td class="num">{{ l.minutos|horas }}</td></tr>{% endfor %}
+</tbody></table></div></details>
+{% endfor %}
+<p class="muted">Total do período: <b>{{ total|horas }}</b> ({{ faturaveis|horas }} faturáveis)</p>
+{% endif %}
 {% endblock %}

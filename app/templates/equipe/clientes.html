@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block titulo %}Clientes{% endblock %}
 {% block conteudo %}
-<div class="topo"><h1>Clientes e contratos</h1>{% if usuario.perfil in ('admin','financeiro') %}<div><a class="btn sec" href="{{ url_for('equipe.importar') }}">Importar planilha</a> <a class="btn" href="{{ url_for('equipe.cliente_novo') }}">+ Novo cliente</a></div>{% endif %}</div>
+<div class="topo"><h1>Clientes</h1><div>{% if pode('importar') %}<a class="btn sec" href="{{ url_for('equipe.importar') }}">Importar planilha</a> {% endif %}{% if pode('contratos') %}<a class="btn sec" href="{{ url_for('contratos.lista') }}">Contratos</a> {% endif %}{% if pode('clientes') %}<a class="btn" href="{{ url_for('equipe.cliente_novo') }}">+ Novo cliente</a>{% endif %}</div></div>
 <div class="tabela">{% if lista %}<table><thead><tr><th>Cliente</th><th>CNPJ</th><th class="num">Contratos ativos</th><th class="num">Chamados abertos</th><th>Situação</th></tr></thead><tbody>
 {% for c in lista %}<tr><td><a href="{{ url_for('equipe.cliente', cliente_id=c.id) }}">{{ c.nome_fantasia or c.razao_social }}</a><div class="muted small">{{ c.razao_social }}</div></td>
 <td>{{ c.cnpj|cnpj }}</td><td class="num">{{ c.contratos }}</td><td class="num">{{ c.abertos }}</td><td>{% if c.ativo %}<span class="selo ok">Ativo</span>{% else %}<span class="selo">Inativo</span>{% endif %}</td></tr>{% endfor %}

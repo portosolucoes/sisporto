@@ -7,7 +7,7 @@
   <a class="btn" href="{{ url_for('equipe.chamados', cliente=c.id) }}">Chamados do cliente</a>
 </div>
 <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Contratos</h2>
-  {% if usuario.perfil in ('admin','financeiro') %}<a class="btn sec peq" href="{{ url_for('equipe.contrato_novo', cliente_id=c.id) }}">+ Novo contrato</a>{% endif %}</div>
+  {% if pode('contratos') %}<a class="btn sec peq" href="{{ url_for('equipe.contrato_novo', cliente_id=c.id) }}">+ Novo contrato</a>{% endif %}</div>
   <div class="tabela">{% if contratos %}<table><thead><tr><th>Contrato</th><th>Tipo</th><th>Condições</th><th>Vigência</th><th>Saldo / uso</th><th></th></tr></thead><tbody>
   {% for ct in contratos %}<tr>
     <td>{{ ct.descricao }}{% if not ct.ativo %} <span class="selo">Inativo</span>{% endif %}</td>
@@ -21,7 +21,7 @@
     </td>
     <td class="small">{{ ct.data_inicio|data }} → {{ ct.data_fim|data if ct.data_fim else 'indeterminado' }}</td>
     <td class="small">{% set s = saldos.get(ct.id) %}{% if s %}{{ s.horas_saldo|horas_dec }} restantes ({{ s.pct_consumido }}% usado){% else %}—{% endif %}</td>
-    <td>{% if usuario.perfil in ('admin','financeiro') %}<a href="{{ url_for('equipe.contrato', contrato_id=ct.id) }}">Editar</a>{% endif %}</td>
+    <td>{% if pode('contratos') %}<a href="{{ url_for('equipe.contrato', contrato_id=ct.id) }}">Editar</a>{% endif %}</td>
   </tr>{% endfor %}</tbody></table>{% else %}<div class="vazio">Nenhum contrato. Cadastre o contrato para os prazos e horas funcionarem.</div>{% endif %}</div>
 </div>
 <div class="grid g2">
@@ -46,7 +46,7 @@
     </tbody></table>{% else %}<div class="vazio">Sem horas lançadas.</div>{% endif %}</div>
   </div>
 </div>
-{% if usuario.perfil in ('admin','financeiro') %}
+{% if pode('clientes') %}
 <details class="card"><summary><b>Editar dados do cliente</b></summary><div style="margin-top:14px">{% set novo = false %}{% include "equipe/_cliente_campos.html" %}</div></details>
 {% endif %}
 {% endblock %}

@@ -33,6 +33,9 @@ def _filtros():
     params = [de, ate]
     if _int(f["cliente"]):
         where.append("cl.id = %s"); params.append(int(f["cliente"]))
+    from flask import g
+    if g.usuario["perfil"] != "admin":  # privacidade: quem não é admin só vê as próprias horas
+        f["recurso"] = str(g.usuario["id"])
     if _int(f["recurso"]):
         where.append("a.usuario_id = %s"); params.append(int(f["recurso"]))
     if _int(f["tipo"]):
@@ -87,8 +90,27 @@ def apontamentos():
     f, linhas, tot, grupos = _dados()
     if request.args.get("formato") == "xlsx":
         return _excel(f, linhas, grupos)
+    if request.args.get("formato") == "pdf":
+        from . import pdf
+        dados = {"cards": [("Total", tot["total"], "horas"), ("Faturáveis", tot["faturavel"], "horas"),
+                           ("Aprovadas", tot["aprovado"], "horas"), ("Pendentes", tot["pendente"], "horas")],
+                 "tabelas": [{"titulo": t, "colunas": [("nome", t.replace("Por ", "").capitalize(), "texto"),
+                                                      ("minutos", "Horas", "horas"), ("faturavel", "Faturáveis", "horas")],
+                              "linhas": itens} for t, itens in grupos.items()] +
+                [{"titulo": "Lançamentos", "linhas": linhas, "larguras": [8, 14, 7, 22, 12, 13, 30, 7, 8],
+                  "colunas": [("data", "Data", "data"), ("cliente", "Cliente", "texto"), ("numero", "Chamado", "texto"),
+                              ("titulo", "Título / contrato", "texto"), ("tipo", "Tipo", "texto"),
+                              ("recurso", "Recurso", "texto"), ("descricao", "Descrição", "texto"),
+                              ("minutos", "Horas", "horas"), ("status", "Status", "texto")]}]}
+        for l in linhas:
+            l["titulo"] = l["titulo"] or l["contrato"]
+        de, ate = dt.date.fromisoformat(f["de"]), dt.date.fromisoformat(f["ate"])
+        return pdf.resposta(f"apontamentos_{f['de']}_{f['ate']}.pdf",
+                            pdf.gerar("Apontamentos de horas", f"Período: {de:%d/%m/%Y} a {ate:%d/%m/%Y}", dados))
     clientes = db().all("SELECT id, coalesce(nome_fantasia, razao_social) AS nome FROM clientes ORDER BY 2")
-    recursos = db().all("SELECT id, nome FROM usuarios WHERE perfil <> 'cliente' ORDER BY nome")
+    from flask import g
+    recursos = db().all("SELECT id, nome FROM usuarios WHERE perfil <> 'cliente' ORDER BY nome") \
+        if g.usuario["perfil"] == "admin" else [g.usuario]
     tipos = db().all("SELECT id, nome FROM tipos_servico ORDER BY ordem, nome")
     return render_template("equipe/relatorio_apontamentos.html", f=f, linhas=linhas, tot=tot, grupos=grupos,
                            clientes=clientes, recursos=recursos, tipos=tipos)
@@ -146,7 +168,7 @@ CATALOGO = [
     ("apontamentos", "Apontamentos de horas", "Horas por cliente, recurso e tipo de serviço, com detalhe dos lançamentos.", "relatorios"),
     ("sla", "SLA e desempenho do atendimento", "% de chamados no prazo, tempo médio de 1ª resposta e de solução, por prioridade e cliente.", "relatorios"),
     ("chamados", "Chamados por período", "Volume aberto e encerrado, por status, categoria, origem e cliente; envelhecimento do backlog.", "relatorios"),
-    ("produtividade", "Produtividade por recurso", "Horas, % faturável, chamados resolvidos e avaliação média por recurso.", "relatorios"),
+    ("produtividade", "Produtividade por recurso", "Horas, % faturável, chamados resolvidos e avaliação média por recurso (somente administrador).", "admin"),
     ("contratos", "Consumo de contratos", "Horas liberadas x consumidas, saldo, franquia mensal e excedentes.", "relatorios"),
     ("satisfacao", "Satisfação (CSAT e NPS)", "Avaliação dos chamados (1 a 5) e Net Promoter Score mensal dos clientes.", "relatorios"),
     ("prefaturamento", "Pré-faturamento do mês", "Quanto faturar de cada cliente: mensalidades, excedentes e horas avulsas aprovadas.", "relatorios_financeiros"),
@@ -477,6 +499,12 @@ def relatorio(chave):
     dados = GERADORES[chave](de, ate, cliente)
     if request.args.get("formato") == "xlsx":
         return _excel_generico(item[1], de, ate, dados)
+    if request.args.get("formato") == "pdf":
+        from . import pdf
+        cli = db().val("SELECT coalesce(nome_fantasia, razao_social) FROM clientes WHERE id = %s", [cliente]) \
+            if cliente else None
+        sub_ = f"Período: {de:%d/%m/%Y} a {ate:%d/%m/%Y}" + (f" · Cliente: {cli}" if cli else "")
+        return pdf.resposta(f"{chave}_{de}_{ate}.pdf", pdf.gerar(item[1], sub_, dados))
     clientes = db().all("SELECT id, coalesce(nome_fantasia, razao_social) AS nome FROM clientes ORDER BY 2")
     return render_template("equipe/relatorio.html", item=item, dados=dados, de=de, ate=ate, cliente=cliente,
                            clientes=clientes, chave=chave)
