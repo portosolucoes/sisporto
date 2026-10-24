@@ -140,7 +140,9 @@ def nps(token):
 def tarefas():
     _autorizar()
     from .alertas import verificar_alertas_saldo
-    return jsonify(alertas_sla=verificar_sla(), nps_enviados=enviar_nps(), alertas_saldo=verificar_alertas_saldo())
+    from .limpeza import limpar
+    return jsonify(alertas_sla=verificar_sla(), nps_enviados=enviar_nps(), alertas_saldo=verificar_alertas_saldo(),
+                   limpeza=limpar())
 
 
 @bp.post("/integracao/agenda")

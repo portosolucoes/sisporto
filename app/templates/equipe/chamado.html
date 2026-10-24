@@ -7,7 +7,7 @@
   <div>{{ m.selo(c.status, 'status') }} {{ m.selo(c.prioridade, 'prioridade') }} {{ m.selo(c.situacao_sla, 'sla') }}
     {% if c.resposta_atrasada %}<span class="selo bad">1ª resposta atrasada</span>{% endif %}</div></div>
 </div>
-{% if bloqueio %}<div class="aviso erro" role="alert" style="margin-bottom:14px"><b>Atendimento bloqueado:</b> {{ bloqueio }}{% if gerir %} Use a caixa <a href="#form-atualizar">Atualizar</a>.{% endif %}</div>{% endif %}
+{% if bloqueio %}<div class="aviso erro" role="alert" style="margin-bottom:14px"><b>Atendimento bloqueado:</b> {{ bloqueio }} Use a caixa <a href="#form-atualizar">Atualizar</a>.</div>{% endif %}
 <div class="grid g-2-1">
   <div>
     <div class="card"><h3>Descrição</h3><div class="txt" style="white-space:pre-wrap">{{ c.descricao }}</div>{{ m.lista_anexos(anexos) }}</div>
@@ -19,7 +19,7 @@
         {{ m.campo_anexo() }}
         <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
           <label class="check"><input type="checkbox" name="interna" value="1"> Nota interna (cliente não vê)</label>
-          {% if gerir %}<div><select name="status_apos" aria-label="Status após responder">
+          {% if true %}<div><select name="status_apos" aria-label="Status após responder">
             <option value="">Manter status</option>
             <option value="em_atendimento">→ Em atendimento</option>
             <option value="aguardando_cliente">→ Aguardando cliente</option>
@@ -101,10 +101,10 @@
         {% if c.avaliacao %}<dt>Avaliação</dt><dd>{{ c.avaliacao }}/5 {{ c.avaliacao_comentario or '' }}</dd>{% endif %}
       </dl>
     </div>
-    {% if gerir %}
+    {% if pode('chamados') %}
     <form class="card" method="post" action="{{ url_for('equipe.chamado_atualizar', numero=c.numero) }}" id="form-atualizar">
       {{ m.csrf_input() }}<h3>Atualizar</h3>
-      <div class="campo"><label>Contrato *</label><select name="contrato_id" required><option value="">Escolha…</option>{% for ct in contratos %}<option value="{{ ct.id }}" {{ 'selected' if c.contrato_id == ct.id }}>{{ ct.descricao }}{% if not ct.situacao.ok %} — {{ 'sem saldo' if 'saldo' in ct.situacao.motivo else 'indisponível' }}{% endif %}</option>{% endfor %}</select><div class="ajuda">Só contratos ativos, vigentes e com saldo liberam o atendimento.</div></div>
+      <div class="campo"><label>Contrato *</label><select name="contrato_id" required {{ 'disabled' if not gerir }}><option value="">Escolha…</option>{% for ct in contratos %}<option value="{{ ct.id }}" {{ 'selected' if c.contrato_id == ct.id }}>{{ ct.descricao }}{% if not ct.situacao.ok %} — {{ 'sem saldo' if 'saldo' in ct.situacao.motivo else 'indisponível' }}{% endif %}</option>{% endfor %}</select><div class="ajuda">{% if gerir %}Só contratos ativos, vigentes e com saldo liberam o atendimento.{% else %}Só quem tem a permissão "Alterar o contrato" troca o contrato.{% endif %}</div></div>
       <div class="campo"><label>Responsável *</label><select name="responsavel_id" required><option value="">Escolha…</option>{% for t in tecnicos %}<option value="{{ t.id }}" {{ 'selected' if c.responsavel_id == t.id }}>{{ t.nome }}</option>{% endfor %}</select></div>
       <div class="campo"><label>Status *</label><select name="status">{% for s in status_lista %}<option value="{{ s }}" {{ 'selected' if c.status == s }}>{{ s|rotulo('status') }}</option>{% endfor %}</select></div>
       <div class="campo"><label>Prioridade *</label><select name="prioridade">{% for p in prioridades %}<option value="{{ p }}" {{ 'selected' if c.prioridade == p }}>{{ p|rotulo('prioridade') }}</option>{% endfor %}</select><div class="ajuda">Mudar a prioridade recalcula o prazo.</div></div>

@@ -1,5 +1,21 @@
 # SisPorto – histórico de versões
 
+Toda versão informa o **orçamento**: custo mensal estimado, teto (R$ 200) e corte automático (R$ 400),
+conforme `infra/gcp/orcamento.conf`. Avisos de custo e travas vão sempre para contato@portosolucoes.com.br.
+
+## 1.7.0 — 24/10/2026 (Ajustes 02 + limpeza)
+- **Orçamento:** custo estimado R$ 85/mês · teto R$ 200 · corte automático R$ 400 · impacto desta versão: **reduz** o crescimento do banco (anexos antigos e históricos saem sozinhos).
+- Cliente: dados do cliente no topo; contratos e usuários abaixo. **Valores (R$) dos contratos só para quem tem acesso a Contratos** — técnicos veem apenas as horas.
+- Chamado: **status, prioridade e responsável editáveis por toda a equipe**; trocar o **contrato** continua exigindo a permissão "Alterar o contrato vinculado aos chamados".
+- Limpeza automática diária: anexos com mais de 90 dias já copiados ao Drive saem do banco (equipe abre pelo Drive; cliente é orientado a pedir cópia); e-mails enviados > 6 meses, consultas > 1 ano, auditoria > 2 anos.
+- Limite de tentativas: login (8 erros por usuário ou 20 por origem em 15 min) e "esqueci minha senha" (10 por hora por origem).
+- Travas: alerta de "sistema fora do ar" corrigido; script para logo se o Cloud Shell estiver sem login.
+
+## 1.6.2 — 24/10/2026 (travas de custo v2)
+- **Orçamento:** custo estimado R$ 85/mês · teto R$ 200 · corte automático R$ 400 · impacto desta versão: nenhum.
+- Travas v2: teto R$ 200 com avisos, corte automático em R$ 400, alertas de disco e de sistema fora do ar, limpeza de versões antigas, cotas de VM/GPU zeradas, chaves de contas de serviço proibidas.
+- Toda publicação confere as travas: sem a trava de corte, com valor diferente do aprovado ou com o sistema bloqueado por custo, a publicação não acontece.
+
 ## 1.6.1 — 24/10/2026
 - Correção da publicação da 1.6.0 (pacote incompleto no servidor).
 - **Conferência do pacote**: MANIFESTO.sha256 com a impressão digital de cada arquivo; a publicação para se algum arquivo não bater.

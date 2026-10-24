@@ -85,6 +85,24 @@ else
   fi
 fi
 
+# --- Travas de custo: conferidas em TODA publicação ---------------------------
+source infra/gcp/orcamento.conf
+say "Conferindo as travas de custo (teto R\$ $TETO_BRL, corte R\$ $CORTE_BRL, custo estimado R\$ $CUSTO_ESTIMADO_BRL/mês)..."
+CORTE_ATUAL=$(gcloud run services describe porto-monitor-orcamento --region="$REGIAO" --format=json 2>/dev/null | \
+  python3 -c "import json,sys; e=json.load(sys.stdin)['spec']['template']['spec']['containers'][0].get('env',[]); print(next((x.get('value','') for x in e if x['name']=='CORTE_BRL'),''))" 2>/dev/null || true)
+if [[ -z "$CORTE_ATUAL" ]]; then
+  echo -e "\033[1;31mTrava de corte automático não encontrada. Rode antes: bash infra/gcp/travas-v2.sh\033[0m"; exit 1
+elif [[ "$CORTE_ATUAL" != "$CORTE_BRL" ]]; then
+  echo -e "\033[1;31mCorte configurado (R\$ $CORTE_ATUAL) diferente do aprovado (R\$ $CORTE_BRL). Rode: bash infra/gcp/travas-v2.sh\033[0m"; exit 1
+fi
+if gcloud run services describe "$SERVICO" --region="$REGIAO" >/dev/null 2>&1 && \
+   ! gcloud run services get-iam-policy "$SERVICO" --region="$REGIAO" --format=json | grep -q '"allUsers"'; then
+  echo -e "\033[1;31mO sistema está BLOQUEADO pelo corte de custo. Publicar agora o reabriria.\033[0m"
+  echo "Entenda a causa do gasto e libere com: bash infra/gcp/liberar-sistema.sh"; exit 1
+fi
+echo "   travas ok: notificações para $EMAIL_NOTIFICACOES"
+[[ -n "${GITHUB_STEP_SUMMARY:-}" ]] && echo "**Orçamento:** custo estimado R\$ $CUSTO_ESTIMADO_BRL/mês · teto R\$ $TETO_BRL · corte automático R\$ $CORTE_BRL" >> "$GITHUB_STEP_SUMMARY"
+
 # --- Serviço ----------------------------------------------------------------
 say "Publicando o sistema no Cloud Run (máx. 2 instâncias)..."
 gcloud run deploy "$SERVICO" --source . --region="$REGIAO" --allow-unauthenticated \
@@ -121,6 +139,7 @@ fi
 URL=$(gcloud run services describe "$SERVICO" --region="$REGIAO" --format="value(status.url)")
 VERSAO=$(sed -n 's/^VERSAO = "\(.*\)"/\1/p' app/__init__.py)
 say "PRONTO! SisPorto $VERSAO publicado."
+echo "Orçamento: custo estimado R\$ $CUSTO_ESTIMADO_BRL/mês · teto R\$ $TETO_BRL · corte automático R\$ $CORTE_BRL · avisos para $EMAIL_NOTIFICACOES"
 echo "Sistema no ar: $URL"
 if [[ "$GEROU_SENHA" == "1" ]]; then
   echo "Entre com $ADMIN_EMAIL e a senha temporária acima, e troque a senha em 'Trocar senha'."

@@ -190,8 +190,6 @@ def chamado_responder(numero):
         if not s["ok"] and not eh_admin():
             raise ValueError(s["motivo"] + " O chamado não pode ser alterado até ser vinculado a um contrato "
                              "ativo com saldo de horas.")
-        if request.form.get("status_apos") and not pode("chamados_gerir"):
-            raise ValueError("Você não tem permissão para mudar o status do chamado.")
         interna = request.form.get("interna") == "1"
         texto = request.form.get("texto")
         anexo = anx.validar(request.files.get("anexo"))
@@ -217,14 +215,13 @@ def chamado_responder(numero):
 def chamado_atualizar(numero):
     c = ch.buscar_equipe(numero)
     f = request.form
-    if not pode("chamados_gerir"):
-        abort(403)
+    gerir = pode("chamados_gerir")  # só quem tem a rotina troca o CONTRATO; status/prioridade/responsável: toda a equipe
     status = f.get("status") if f.get("status") in ch.STATUS else c["status"]
     prioridade = f.get("prioridade") if f.get("prioridade") in ch.PRIORIDADES else c["prioridade"]
     resp = _int(f.get("responsavel_id"))
     if resp and not db().val("SELECT 1 FROM usuarios WHERE id = %s AND perfil <> 'cliente'", [resp]):
         abort(400)
-    contrato = _int(f.get("contrato_id"))
+    contrato = _int(f.get("contrato_id")) if gerir else c["contrato_id"]
     if contrato and not db().val("SELECT 1 FROM contratos WHERE id = %s AND cliente_id = %s",
                                  [contrato, c["cliente_id"]]):
         abort(400)

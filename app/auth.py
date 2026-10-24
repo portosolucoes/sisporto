@@ -92,6 +92,12 @@ def inicio():
 @bp.route("/entrar", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        from .limpeza import excedeu, registrar
+        ip = request.remote_addr or "?"
+        alvo = (request.form.get("email") or "").strip().lower()
+        if excedeu(f"login-ip:{ip}", 20, 15) or excedeu(f"login-usuario:{alvo}", 8, 15):
+            flash("Muitas tentativas sem sucesso. Aguarde 15 minutos ou use “Esqueci minha senha”.", "erro")
+            return render_template("login.html", google=bool(current_app.config["GOOGLE_CLIENT_ID"])), 429
         ident = (request.form.get("email") or "").strip()
         senha = (request.form.get("senha") or "").strip()  # colar do terminal pode trazer espaços
         if "@" in ident:
@@ -120,6 +126,8 @@ def login():
             if proximo.startswith("/") and not proximo.startswith("//"):
                 return redirect(proximo)
             return redirect(destino_inicial(u))
+        registrar(f"login-ip:{ip}")
+        registrar(f"login-usuario:{alvo}")
         time.sleep(0.5)
         flash("Usuário ou senha incorretos.", "erro")
     google = bool(current_app.config["GOOGLE_CLIENT_ID"])
@@ -223,6 +231,12 @@ def recuperar_senha():
         if "@" not in email:
             flash("Digite o seu e-mail para recuperar a senha.", "erro")
             return render_template("recuperar.html", email=email)
+        from .limpeza import excedeu, registrar
+        ip = request.remote_addr or "?"
+        if excedeu(f"senha-ip:{ip}", 10, 60):
+            flash("Muitos pedidos deste local. Tente de novo em 1 hora.", "erro")
+            return render_template("recuperar.html", email=email), 429
+        registrar(f"senha-ip:{ip}")
         for u in db().all("SELECT id, nome, email, codigo FROM usuarios WHERE email = %s AND ativo", [email]):
             enviar_link_senha(u)
         time.sleep(0.3)

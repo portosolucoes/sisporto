@@ -8,7 +8,7 @@ from flask import Flask, abort, g, request, session
 
 from . import db as dbmod
 
-VERSAO = "1.6.1"
+VERSAO = "1.7.0"
 from . import util
 
 

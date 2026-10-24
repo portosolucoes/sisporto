@@ -746,7 +746,10 @@ class TestEntrega2(Base):
             cli = self.cliente_http("joao@clinicabeta.com.br")
             self.post(cli, "/portal/chamados/novo", {"titulo": "Tudo parado", "descricao": "x", "prioridade": "critica"})
             self.assertTrue(any("CRÍTICO" in e["text"] for e in enviados))
-            # SLA estourado do demo (#1003) gera alerta 1 única vez
+            # SLA estourado gera alerta 1 única vez (prazo forçado no passado: o teste não depende do dia/hora)
+            self.sql("""UPDATE chamados SET prazo_solucao = now() - interval '2 hours', alerta_estouro_em = NULL,
+                               alerta_risco_em = NULL
+                         WHERE id = (SELECT min(id) FROM chamados WHERE status IN ('novo','em_atendimento'))""")
             n1 = self.chamar("/integracao/tarefas").json["alertas_sla"]
             n2 = self.chamar("/integracao/tarefas").json["alertas_sla"]
             self.assertGreaterEqual(n1, 1)
@@ -1276,8 +1279,13 @@ class TestEntrega5(Base):
         # sem permissão de gerir, não altera contrato/responsável/status/prioridade
         self.sql("INSERT INTO permissoes (usuario_id, rotina, permitido) VALUES (%s, 'chamados_gerir', false)",
                  [self.ids["tec"]])
-        self.assertEqual(self.post(tec, f"/chamados/{num}/atualizar", {"status": "resolvido"}).status_code, 403)
-        self.assertNotIn('id="form-atualizar"', tec.get(f"/chamados/{num}").get_data(as_text=True))
+        outro = self.sql("SELECT id FROM contratos WHERE cliente_id = %s AND ativo ORDER BY id LIMIT 1", [self.ids["alfa"]])[0]["id"]
+        self.post(tec, f"/chamados/{num}/atualizar", {"contrato_id": str(outro), "responsavel_id": str(self.ids["tec"]),
+                                                     "status": "novo", "prioridade": "alta"})
+        self.assertIsNone(self.sql("SELECT contrato_id FROM chamados WHERE id = %s", [cid["id"]])[0]["contrato_id"])
+        html = tec.get(f"/chamados/{num}").get_data(as_text=True)
+        self.assertIn('id="form-atualizar"', html)  # status, prioridade e responsável continuam editáveis
+        self.assertIn('name="contrato_id" required disabled', html)
         self.sql("DELETE FROM permissoes WHERE usuario_id = %s AND rotina = 'chamados_gerir'", [self.ids["tec"]])
         # contrato sem saldo não é aceito
         sem = self.sql("""INSERT INTO contratos (cliente_id, tipo, descricao, horas_pacote, valor_hora, data_inicio)
@@ -1554,3 +1562,60 @@ class TestPacote(unittest.TestCase):
             finally:
                 alvo.unlink()
         self.assertTrue(any("kb.nao_existe" in e for e in erros))
+
+
+class TestVersao17(Base):
+    """Ajustes 02 + limpeza automática + limite de tentativas."""
+
+    def test_cliente_dados_no_topo_e_valores_ocultos(self):
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        html = adm.get(f"/clientes/{self.ids['alfa']}").get_data(as_text=True)
+        self.assertLess(html.index("Dados do cliente"), html.index("<h2>Contratos</h2>"))
+        self.assertIn("R$", html.split("<h2>Contratos</h2>")[1].split("Usuários do cliente")[0])
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        html = tec.get(f"/clientes/{self.ids['alfa']}").get_data(as_text=True)
+        self.assertLess(html.index("Dados do cliente"), html.index("<h2>Contratos</h2>"))
+        self.assertNotIn("R$", html.split("<h2>Contratos</h2>")[1].split("Usuários do cliente")[0])
+
+    def test_tecnico_altera_status_prioridade_responsavel(self):
+        num = self.sql("""INSERT INTO chamados (cliente_id, solicitante_id, contrato_id, titulo, descricao, prioridade, origem)
+                          VALUES (%s, %s, %s, 'Status pelo técnico', 'x', 'media', 'portal') RETURNING numero""",
+                       [self.ids["beta"], self.ids["joao"], self.ids["ct_beta"]])[0]["numero"]
+        self.sql("INSERT INTO permissoes (usuario_id, rotina, permitido) VALUES (%s, 'chamados_gerir', false)", [self.ids["tec"]])
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        self.assertIn('id="form-atualizar"', tec.get(f"/chamados/{num}").get_data(as_text=True))
+        self.post(tec, f"/chamados/{num}/atualizar", {"status": "em_atendimento", "prioridade": "alta",
+                                                     "responsavel_id": str(self.ids["tec"])})
+        c = self.sql("SELECT status::text, prioridade::text, responsavel_id, contrato_id FROM chamados WHERE numero = %s", [num])[0]
+        self.assertEqual((c["status"], c["prioridade"], c["responsavel_id"], c["contrato_id"]),
+                         ("em_atendimento", "alta", self.ids["tec"], self.ids["ct_beta"]))
+        self.sql("DELETE FROM permissoes WHERE usuario_id = %s", [self.ids["tec"]])
+
+    def test_limite_de_tentativas_no_login(self):
+        c = self.app.test_client()
+        c.get("/entrar")
+        for _ in range(8):
+            self.post(c, "/entrar", {"email": "ana@portosolucoes.com.br", "senha": "errada"})
+        r = self.post(c, "/entrar", {"email": "ana@portosolucoes.com.br", "senha": SENHA_DEMO})
+        self.assertEqual(r.status_code, 429)
+        self.sql("DELETE FROM tentativas")
+
+    def test_limpeza_automatica(self):
+        cid = self.sql("SELECT id FROM chamados ORDER BY id LIMIT 1")[0]["id"]
+        aid = self.sql("""INSERT INTO chamado_anexos (chamado_id, nome_arquivo, tamanho_bytes, tipo_mime, arquivo, drive_arquivo_id,
+                                                      drive_url, criado_em)
+                          VALUES (%s, 'velho.zip', 3, 'application/zip', '\\x504b03', 'x', 'https://drive.google.com/x',
+                                  now() - interval '120 days') RETURNING id""", [cid])[0]["id"]
+        self.sql("""INSERT INTO emails_saida (para, assunto, corpo, evento, enviado_em)
+                    VALUES ('a@b.com', 'velho', 'x', 'teste', now() - interval '200 days')""")
+        from app.limpeza import limpar
+        with self.app.app_context():
+            from app.db import db
+            r = limpar(forcar=True)
+            db().commit()
+        self.assertGreaterEqual(r["anexos_arquivados"], 1)
+        self.assertIsNone(self.sql("SELECT arquivo FROM chamado_anexos WHERE id = %s", [aid])[0]["arquivo"])
+        self.assertFalse(self.sql("SELECT 1 FROM emails_saida WHERE assunto = 'velho'"))
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        r = adm.get(f"/anexos/{aid}")
+        self.assertEqual(r.headers.get("Location"), "https://drive.google.com/x")

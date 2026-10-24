@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from flask import Blueprint, Response, abort, g
+from flask import Blueprint, Response, abort, g, request
 
 from .acessos import pode
 from .auth import login_obrigatorio
@@ -76,8 +76,13 @@ def baixar(anexo_id):
         resp = db().val("SELECT responsavel_id FROM chamados WHERE id = %s", [a["chamado_id"]])
         if not visivel({"responsavel_id": resp}):
             abort(403)
-    if a["arquivo"] is None:
-        abort(404)
+    if a["arquivo"] is None:  # arquivado: depois de 90 dias o arquivo fica só no Google Drive
+        if u["perfil"] != "cliente" and a.get("drive_url"):
+            from flask import redirect
+            return redirect(a["drive_url"])
+        from flask import flash, redirect
+        flash("Este anexo foi arquivado (mais de 90 dias). Peça uma cópia à equipe da Porto Soluções.", "erro")
+        return redirect(request.referrer or "/")
     r = Response(bytes(a["arquivo"]), mimetype="application/octet-stream")
     r.headers["Content-Disposition"] = f'attachment; filename="{a["nome_arquivo"]}"'
     r.headers["X-Content-Type-Options"] = "nosniff"

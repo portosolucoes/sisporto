@@ -15,7 +15,7 @@ NUM=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
 SA="$SA_NOME@$PROJECT_ID.iam.gserviceaccount.com"
 SA_RUN="$NUM-compute@developer.gserviceaccount.com"
 echo "==> APIs"
-gcloud services enable iamcredentials.googleapis.com sts.googleapis.com iam.googleapis.com >/dev/null
+gcloud services enable iamcredentials.googleapis.com sts.googleapis.com iam.googleapis.com cloudresourcemanager.googleapis.com >/dev/null
 
 echo "==> Conta de publicação $SA"
 gcloud iam service-accounts describe "$SA" >/dev/null 2>&1 || \
@@ -39,9 +39,14 @@ gcloud iam workload-identity-pools providers describe "$PROVEDOR" --location=glo
     --issuer-uri="https://token.actions.githubusercontent.com" \
     --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
     --attribute-condition="assertion.repository=='$REPO' && assertion.ref=='refs/heads/main'"
-gcloud iam service-accounts add-iam-policy-binding "$SA" --role=roles/iam.workloadIdentityUser \
-  --member="principalSet://iam.googleapis.com/projects/$NUM/locations/global/workloadIdentityPools/$POOL/attribute.repository/$REPO" \
-  >/dev/null
+# a conta recém-criada leva até ~1 min para valer no IAM: tenta de novo algumas vezes
+for TENTATIVA in 1 2 3 4 5 6; do
+  if gcloud iam service-accounts add-iam-policy-binding "$SA" --role=roles/iam.workloadIdentityUser \
+      --member="principalSet://iam.googleapis.com/projects/$NUM/locations/global/workloadIdentityPools/$POOL/attribute.repository/$REPO" \
+      >/dev/null 2>&1; then break; fi
+  [[ $TENTATIVA == 6 ]] && { echo "Não consegui ligar o GitHub à conta $SA. Rode o script de novo em 1 minuto."; exit 1; }
+  echo "   aguardando a conta nova propagar no Google ($TENTATIVA/6)..."; sleep 20
+done
 
 echo
 echo "PRONTO. O GitHub ($REPO, branch main) já pode publicar o SisPorto."
