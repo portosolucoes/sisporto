@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block titulo %}E-mails não processados{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>E-mails não processados</h1><div class="muted">Mensagens que chegaram ao suporte@ e não viraram chamado. Cadastre o contato ou o domínio do cliente e peça para reenviar. Fila de envio pendente: {{ fila }}.</div></div></div>
+<div class="tabela">{% if lista %}<table><thead><tr><th>Recebido</th><th>De</th><th>Assunto</th><th>Motivo</th></tr></thead><tbody>
+{% for e in lista %}<tr><td class="small">{{ e.recebido_em|data_hora }}</td><td>{{ e.de }}</td><td>{{ e.assunto or '—' }}</td><td class="small">{{ e.motivo }}</td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="vazio">Nenhum e-mail recusado.</div>{% endif %}</div>
+{% endblock %}

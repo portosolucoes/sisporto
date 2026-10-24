@@ -6,6 +6,8 @@ import re
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
+import secrets
+
 from flask import render_template
 
 TZ = ZoneInfo("America/Sao_Paulo")
@@ -130,3 +132,11 @@ def registrar_filtros(app):
         data=data, data_hora=data_hora, horas=horas, horas_dec=horas_dec, moeda=moeda,
         rotulo=rotulo, cnpj=cnpj_fmt,
     )
+
+
+ALFABETO_SENHA = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"  # sem 0/O, 1/l/I
+
+
+def senha_temporaria(n: int = 12) -> str:
+    """Senha fácil de ler e digitar (sem caracteres que se confundem)."""
+    return "".join(secrets.choice(ALFABETO_SENHA) for _ in range(n))

@@ -8,6 +8,7 @@ from flask import Blueprint, flash, g, redirect, render_template, request, url_f
 from . import chamados as ch
 from .auth import perfis
 from .db import db
+from .email_integracao import notificar
 from .util import TZ
 
 bp = Blueprint("portal", __name__)
@@ -67,7 +68,8 @@ def chamado_novo():
                             titulo=request.form.get("titulo"), descricao=request.form.get("descricao"),
                             prioridade=request.form.get("prioridade", "media"),
                             categoria=request.form.get("categoria"))
-            flash(f"Chamado #{novo['numero']} aberto. Você receberá as atualizações por aqui.", "ok")
+            notificar(novo["id"], "aberto")
+            flash(f"Chamado #{novo['numero']} aberto. Você receberá as atualizações por aqui e por e-mail.", "ok")
             return redirect(url_for("portal.chamado", numero=novo["numero"]))
         except ValueError as e:
             flash(str(e), "erro")

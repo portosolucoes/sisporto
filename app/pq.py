@@ -76,6 +76,7 @@ _PARSERS = {
     1114: dt.datetime.fromisoformat,
     1184: _ts,
     114: json.loads, 3802: json.loads,
+    17: lambda v: bytes.fromhex(v[2:]),  # bytea em formato hex (\\x...)
 }
 
 
@@ -86,6 +87,8 @@ def _to_text(v) -> bytes | None:
         return b"t" if v else b"f"
     if isinstance(v, (dt.datetime, dt.date, dt.time)):
         return v.isoformat().encode()
+    if isinstance(v, (bytes, bytearray, memoryview)):
+        return b"\\x" + bytes(v).hex().encode()
     if isinstance(v, (dict, list)):
         return json.dumps(v).encode()
     return str(v).encode()

@@ -3,3 +3,4 @@ psycopg[binary]~=3.2.0
 gunicorn~=23.0
 requests~=2.32
 PyJWT~=2.10
+openpyxl~=3.1

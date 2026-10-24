@@ -10,7 +10,8 @@ from werkzeug.security import generate_password_hash
 from . import chamados as ch
 from .auth import admin, equipe, perfis
 from .db import IntegrityError, db
-from .util import TZ, cnpj_valido, parse_decimal, parse_duracao, so_digitos
+from .email_integracao import notificar
+from .util import TZ, cnpj_valido, parse_decimal, parse_duracao, so_digitos, senha_temporaria
 
 bp = Blueprint("equipe", __name__)
 
@@ -118,6 +119,7 @@ def chamado_novo():
                 titulo=form.get("titulo"), descricao=form.get("descricao"), categoria=form.get("categoria"),
                 prioridade=form.get("prioridade", "media"), origem="interno",
                 responsavel_id=_int(form.get("responsavel_id")))
+            notificar(novo["id"], "aberto")
             flash(f"Chamado #{novo['numero']} aberto.", "ok")
             return redirect(url_for("equipe.chamado", numero=novo["numero"]))
         except ValueError as e:
@@ -150,11 +152,15 @@ def chamado(numero):
 def chamado_responder(numero):
     c = ch.buscar(numero)
     try:
-        ch.responder(c["id"], g.usuario["id"], request.form.get("texto"),
-                     interna=request.form.get("interna") == "1")
+        interna = request.form.get("interna") == "1"
+        texto = request.form.get("texto")
+        ch.responder(c["id"], g.usuario["id"], texto, interna=interna)
         novo_status = request.form.get("status_apos")
         if novo_status in ch.STATUS and novo_status != c["status"]:
             db().run("UPDATE chamados SET status = %s WHERE id = %s", [novo_status, c["id"]])
+        if not interna:
+            notificar(c["id"], "resolvido" if novo_status == "resolvido" else "resposta",
+                      (texto or "").strip(), g.usuario["id"])
         if not c["responsavel_id"]:
             db().run("UPDATE chamados SET responsavel_id = %s WHERE id = %s", [g.usuario["id"], c["id"]])
         flash("Resposta registrada.", "ok")
@@ -180,6 +186,8 @@ def chamado_atualizar(numero):
     db().run("""UPDATE chamados SET status = %s, prioridade = %s, responsavel_id = %s, contrato_id = %s,
                        categoria = %s WHERE id = %s""",
              [status, prioridade, resp, contrato, (f.get("categoria") or "").strip() or None, c["id"]])
+    if status == "resolvido" and c["status"] != "resolvido":
+        notificar(c["id"], "resolvido")
     flash("Chamado atualizado.", "ok")
     return redirect(url_for("equipe.chamado", numero=numero))
 
@@ -283,7 +291,8 @@ def cliente(cliente_id):
 
 
 CAMPOS_CONTRATO = ["tipo", "descricao", "valor_mensal", "franquia_horas", "valor_hora", "horas_pacote",
-                   "valor_total", "data_inicio", "data_fim", "dia_vencimento", "indice_reajuste", "mes_reajuste"]
+                   "valor_total", "data_inicio", "data_fim", "dia_vencimento", "indice_reajuste", "mes_reajuste",
+                   "sla_politica_id"]
 
 
 def _dados_contrato(form):
@@ -310,7 +319,11 @@ def _dados_contrato(form):
         "dia_vencimento": _int(form.get("dia_vencimento")),
         "indice_reajuste": (form.get("indice_reajuste") or "").strip() or None,
         "mes_reajuste": _int(form.get("mes_reajuste")),
+        "sla_politica_id": _int(form.get("sla_politica_id")),
     }
+    if vals["sla_politica_id"] and not db().val("SELECT 1 FROM sla_politicas WHERE id = %s",
+                                                [vals["sla_politica_id"]]):
+        raise ValueError("Política de SLA inválida.")
     obrig = {"mensal_fixo": "valor_mensal", "banco_horas": "horas_pacote", "hora_avulsa": "valor_hora",
              "projeto": "valor_total", "proposta_avulsa": "valor_total"}[tipo]
     if vals[obrig] is None:
@@ -337,7 +350,8 @@ def contrato_novo(cliente_id):
         except IntegrityError:
             db().rollback()
             flash("Dados do contrato inconsistentes. Confira os valores.", "erro")
-    return render_template("equipe/contrato_form.html", cliente=c, ct=request.form, novo=True)
+    return render_template("equipe/contrato_form.html", cliente=c, ct=request.form, novo=True,
+                           politicas=_politicas())
 
 
 @bp.route("/contratos/<int:contrato_id>", methods=["GET", "POST"])
@@ -359,7 +373,8 @@ def contrato(contrato_id):
             db().rollback()
             flash("Dados do contrato inconsistentes. Confira os valores.", "erro")
         ct = dict(request.form)
-    return render_template("equipe/contrato_form.html", cliente=c, ct=ct, novo=False, contrato_id=contrato_id)
+    return render_template("equipe/contrato_form.html", cliente=c, ct=ct, novo=False, contrato_id=contrato_id,
+                           politicas=_politicas())
 
 
 @bp.post("/clientes/<int:cliente_id>/contatos")
@@ -507,22 +522,140 @@ def hora_excluir(apontamento_id):
 @bp.route("/config/sla", methods=["GET", "POST"])
 @admin
 def config_sla():
-    pol = db().one("SELECT * FROM sla_politicas WHERE padrao")
-    if request.method == "POST" and pol:
-        for p in ch.PRIORIDADES:
-            r = parse_duracao(request.form.get(f"{p}_resposta"))
-            s = parse_duracao(request.form.get(f"{p}_solucao"))
-            if r and s and s >= r:
-                db().run("""UPDATE sla_regras SET minutos_1a_resposta = %s, minutos_solucao = %s
-                             WHERE politica_id = %s AND prioridade = %s""", [r, s, pol["id"], p])
-        flash("Prazos atualizados. Valem para chamados novos.", "ok")
+    """Políticas de SLA: cada uma define prazos por prioridade; o contrato escolhe a política."""
+    if request.method == "POST":
+        acao = request.form.get("acao")
+        pol_id = _int(request.form.get("politica_id"))
+        nome = (request.form.get("nome") or "").strip()
+        regras, erro = {}, None
+        if acao in ("criar", "salvar"):
+            for p in ch.PRIORIDADES:
+                r = parse_duracao(request.form.get(f"{p}_resposta"))
+                s = parse_duracao(request.form.get(f"{p}_solucao"))
+                if not r or not s:
+                    erro = f"Preencha os dois prazos da prioridade {p} (ex.: 2h, 30m, 1:30)."
+                elif s < r:
+                    erro = f"Prioridade {p}: o prazo de solução não pode ser menor que o de 1ª resposta."
+                regras[p] = (r, s)
+            if not nome:
+                erro = "Dê um nome para a política (ex.: Contrato Premium)."
+        if erro:
+            flash(erro, "erro")
+        elif acao == "criar":
+            try:
+                pid = db().val("INSERT INTO sla_politicas (nome) VALUES (%s) RETURNING id", [nome])
+                for p, (r, s) in regras.items():
+                    db().run("""INSERT INTO sla_regras (politica_id, prioridade, minutos_1a_resposta, minutos_solucao)
+                                VALUES (%s,%s,%s,%s)""", [pid, p, r, s])
+                flash(f"Política \"{nome}\" criada. Escolha-a no contrato do cliente.", "ok")
+            except IntegrityError:
+                db().rollback()
+                flash("Já existe uma política com esse nome.", "erro")
+        elif acao == "salvar" and pol_id:
+            try:
+                db().run("UPDATE sla_politicas SET nome = %s WHERE id = %s", [nome, pol_id])
+                for p, (r, s) in regras.items():
+                    db().run("""INSERT INTO sla_regras (politica_id, prioridade, minutos_1a_resposta, minutos_solucao)
+                                VALUES (%s,%s,%s,%s)
+                                ON CONFLICT (politica_id, prioridade) DO UPDATE
+                                SET minutos_1a_resposta = EXCLUDED.minutos_1a_resposta,
+                                    minutos_solucao = EXCLUDED.minutos_solucao""", [pol_id, p, r, s])
+                flash("Prazos salvos. Valem para chamados abertos a partir de agora.", "ok")
+            except IntegrityError:
+                db().rollback()
+                flash("Já existe uma política com esse nome.", "erro")
+        elif acao == "padrao" and pol_id:
+            db().run("UPDATE sla_politicas SET padrao = false WHERE padrao")
+            db().run("UPDATE sla_politicas SET padrao = true WHERE id = %s", [pol_id])
+            flash("Política padrão alterada (vale para contratos sem política definida).", "ok")
+        elif acao == "excluir" and pol_id:
+            em_uso = db().val("SELECT count(*) FROM contratos WHERE sla_politica_id = %s", [pol_id])
+            if db().val("SELECT padrao FROM sla_politicas WHERE id = %s", [pol_id]):
+                flash("A política padrão não pode ser excluída.", "erro")
+            elif em_uso:
+                flash(f"Política em uso por {em_uso} contrato(s). Troque a política desses contratos antes.", "erro")
+            else:
+                db().run("DELETE FROM sla_politicas WHERE id = %s", [pol_id])
+                flash("Política excluída.", "ok")
         return redirect(url_for("equipe.config_sla"))
-    regras = db().all("""SELECT * FROM sla_regras WHERE politica_id = %s
-                          ORDER BY array_position(ARRAY['critica','alta','media','baixa']::prioridade[], prioridade)""",
-                      [pol["id"]]) if pol else []
+    politicas = db().all("""SELECT p.*, (SELECT count(*) FROM contratos c WHERE c.sla_politica_id = p.id) AS contratos
+                              FROM sla_politicas p ORDER BY p.padrao DESC, p.nome""")
+    regras = {}
+    for r in db().all("SELECT * FROM sla_regras"):
+        regras.setdefault(r["politica_id"], {})[r["prioridade"]] = r
     expediente = db().all("SELECT * FROM expediente ORDER BY dia_semana")
     feriados = db().all("SELECT * FROM feriados WHERE data >= current_date ORDER BY data LIMIT 12")
-    return render_template("equipe/config_sla.html", regras=regras, expediente=expediente, feriados=feriados)
+    return render_template("equipe/config_sla.html", politicas=politicas, regras=regras,
+                           prioridades=ch.PRIORIDADES, expediente=expediente, feriados=feriados)
+
+
+TIPOS_IMAGEM = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg", b"RIFF": "image/webp"}
+
+
+@bp.route("/config/marca", methods=["GET", "POST"])
+@admin
+def config_marca():
+    if request.method == "POST":
+        if request.form.get("acao") == "restaurar":
+            db().run("DELETE FROM configuracoes WHERE chave = 'logo'")
+            flash("Logo padrão restaurado.", "ok")
+        else:
+            arq = request.files.get("logo")
+            dados = arq.read() if arq else b""
+            mime = next((m for sig, m in TIPOS_IMAGEM.items() if dados.startswith(sig)), None)
+            if mime == "image/webp" and dados[8:12] != b"WEBP":
+                mime = None
+            if not dados:
+                flash("Escolha o arquivo do logo.", "erro")
+            elif not mime:
+                flash("Formato não aceito. Envie PNG, JPG ou WEBP.", "erro")
+            elif len(dados) > 1024 * 1024:
+                flash("O arquivo deve ter no máximo 1 MB.", "erro")
+            else:
+                db().run("""INSERT INTO configuracoes (chave, arquivo, tipo_mime) VALUES ('logo', %s, %s)
+                            ON CONFLICT (chave) DO UPDATE SET arquivo = EXCLUDED.arquivo,
+                            tipo_mime = EXCLUDED.tipo_mime, atualizado_em = now()""", [dados, mime])
+                flash("Logo atualizado.", "ok")
+        return redirect(url_for("equipe.config_marca"))
+    personalizado = db().one("SELECT atualizado_em FROM configuracoes WHERE chave = 'logo'")
+    return render_template("equipe/config_marca.html", personalizado=personalizado)
+
+
+@bp.route("/importar", methods=["GET", "POST"])
+@perfis("admin", "financeiro")
+def importar():
+    from .importacao import importar as executar
+    resultado = None
+    if request.method == "POST":
+        arq = request.files.get("planilha")
+        if not arq or not arq.filename.lower().endswith(".xlsx"):
+            flash("Escolha a planilha .xlsx preenchida.", "erro")
+        else:
+            resumo, erros, acessos = executar(arq.read())
+            if erros:
+                db().rollback()
+                resultado = {"erros": erros}
+            else:
+                resultado = {"resumo": resumo, "acessos": acessos}
+    return render_template("equipe/importar.html", resultado=resultado)
+
+
+@bp.get("/importar/modelo.xlsx")
+@perfis("admin", "financeiro")
+def importar_modelo():
+    from flask import Response
+    from .importacao import gerar_modelo
+    return Response(gerar_modelo(),
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": "attachment; filename=sisporto-importacao.xlsx"})
+
+
+@bp.get("/emails-recusados")
+@equipe
+def emails_recusados():
+    lista = db().all("SELECT * FROM emails_recusados ORDER BY recebido_em DESC LIMIT 100")
+    fila = db().val("SELECT count(*) FROM emails_saida WHERE enviado_em IS NULL")
+    return render_template("equipe/emails_recusados.html", lista=lista, fila=fila)
 
 
 # =============================================================================
@@ -532,9 +665,13 @@ def _clientes_ativos():
     return db().all("SELECT id, coalesce(nome_fantasia, razao_social) AS nome FROM clientes WHERE ativo ORDER BY 2")
 
 
+def _politicas():
+    return db().all("SELECT id, nome, padrao FROM sla_politicas ORDER BY padrao DESC, nome")
+
+
 def _tecnicos():
     return db().all("SELECT id, nome FROM usuarios WHERE perfil <> 'cliente' AND ativo ORDER BY nome")
 
 
 def _senha_temporaria():
-    return secrets.token_urlsafe(9)
+    return senha_temporaria()

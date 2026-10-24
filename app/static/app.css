@@ -17,6 +17,8 @@ h1{font-size:22px;margin:0 0 4px} h2{font-size:17px;margin:0 0 12px} h3{font-siz
 .side{background:#14263d;color:#cfd8e6;padding:18px 12px;position:sticky;top:0;height:100vh;overflow:auto}
 .side .marca{display:flex;gap:10px;align-items:center;color:#fff;font-weight:700;font-size:16px;padding:4px 8px 18px}
 .side .marca span{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:8px;background:#2b6cb0;font-size:14px}
+.side .marca-logo{background:#fff;border-radius:10px;padding:10px 12px;margin:0 2px 16px;text-align:center}
+.side .marca-logo img{max-width:100%;max-height:64px;display:block;margin:0 auto}
 .side nav a{display:block;color:#cfd8e6;padding:8px 10px;border-radius:8px;margin:2px 0}
 .side nav a:hover{background:#1e3755;text-decoration:none}
 .side nav a.ativo{background:#2b6cb0;color:#fff}

@@ -18,6 +18,9 @@
     <div class="campo"><label>Início *</label><input type="date" name="data_inicio" value="{{ ct.data_inicio or '' }}" required></div>
     <div class="campo"><label>Fim / validade</label><input type="date" name="data_fim" value="{{ ct.data_fim or '' }}"></div>
     <div class="campo"><label>Índice de reajuste</label><input type="text" name="indice_reajuste" value="{{ ct.indice_reajuste or '' }}" placeholder="IPCA, IGP-M"></div>
+    <div class="campo"><label>Política de SLA (prazos)</label><select name="sla_politica_id">
+      {% for p in politicas %}<option value="{{ '' if p.padrao else p.id }}" {{ 'selected' if (ct.sla_politica_id|string) == (p.id|string) or (p.padrao and not ct.sla_politica_id) }}>{{ p.nome }}{{ ' (padrão)' if p.padrao }}</option>{% endfor %}
+      </select><div class="ajuda">Define os prazos por prioridade dos chamados deste contrato. <a href="{{ url_for('equipe.config_sla') }}">Gerenciar políticas</a></div></div>
     <div class="campo"><label>Mês do reajuste</label><input type="number" min="1" max="12" name="mes_reajuste" value="{{ ct.mes_reajuste or '' }}"></div>
   </div>
   {% if not novo %}<div class="campo"><label class="check"><input type="checkbox" name="ativo" value="1" {{ 'checked' if ct.ativo in (true, '1') }}> Contrato ativo</label></div>{% endif %}

@@ -85,7 +85,7 @@ def inicio():
 def login():
     if request.method == "POST":
         email = (request.form.get("email") or "").strip().lower()
-        senha = request.form.get("senha") or ""
+        senha = (request.form.get("senha") or "").strip()  # colar do terminal pode trazer espaços
         u = db().one("SELECT id, perfil, senha_hash, ativo FROM usuarios WHERE email = %s", [email])
         if u and u["ativo"] and u["senha_hash"] and check_password_hash(u["senha_hash"], senha):
             _entrar(u)

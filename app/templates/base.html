@@ -9,7 +9,7 @@
 {% if usuario %}
 <div class="app">
   <aside class="side">
-    <div class="marca"><span>PS</span>SisPorto</div>
+    <div class="marca-logo"><img src="{{ url_for('logo') }}" alt="Porto Soluções Corporativas"></div>
     <nav>
       {% set ep = request.endpoint or '' %}
       {% if usuario.perfil == 'cliente' %}
@@ -21,11 +21,13 @@
         <a href="{{ url_for('equipe.painel') }}" class="{{ 'ativo' if ep == 'equipe.painel' }}">Painel</a>
         <a href="{{ url_for('equipe.chamados') }}" class="{{ 'ativo' if ep.startswith('equipe.chamado') }}">Chamados</a>
         <a href="{{ url_for('equipe.horas') }}" class="{{ 'ativo' if ep.startswith('equipe.hora') }}">Horas</a>
+        <a href="{{ url_for('equipe.emails_recusados') }}" class="{{ 'ativo' if ep == 'equipe.emails_recusados' }}">E-mails não processados</a>
         <div class="sec">Cadastros</div>
         <a href="{{ url_for('equipe.clientes') }}" class="{{ 'ativo' if ep.startswith('equipe.cliente') or ep.startswith('equipe.contrato') }}">Clientes e contratos</a>
         {% if usuario.perfil == 'admin' %}
         <a href="{{ url_for('equipe.equipe_lista') }}" class="{{ 'ativo' if ep == 'equipe.equipe_lista' }}">Equipe</a>
         <a href="{{ url_for('equipe.config_sla') }}" class="{{ 'ativo' if ep == 'equipe.config_sla' }}">Prazos (SLA)</a>
+        <a href="{{ url_for('equipe.config_marca') }}" class="{{ 'ativo' if ep == 'equipe.config_marca' }}">Logo da empresa</a>
         {% endif %}
       {% endif %}
     </nav>

@@ -261,3 +261,210 @@ class TestFluxo(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEmail(Base):
+    TOKEN = "tok-teste"
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.app.config["INTEGRACAO_TOKEN"] = cls.TOKEN
+
+    def chamar(self, rota, dados=None, token=None):
+        return self.app.test_client().post(f"/integracao/email/{rota}", json=dados or {},
+                                           headers={"X-Token": token or self.TOKEN})
+
+    def test_token_obrigatorio(self):
+        self.assertEqual(self.chamar("saida", token="errado").status_code, 403)
+
+    def test_limpar_resposta(self):
+        from app.email_integracao import limpar_resposta
+        t = "Ok, funcionou!\n\nEm qui., 23 de out. de 2026 às 10:00, Suporte <suporte@x.com> escreveu:\n> antigo"
+        self.assertEqual(limpar_resposta(t), "Ok, funcionou!")
+
+    def test_fluxo_email(self):
+        # cliente conhecido pelo domínio abre chamado por e-mail
+        r = self.chamar("entrada", {"message_id": "m1", "thread_id": "t1", "de": "Carla@AlfaLog.com.br",
+                                    "assunto": "Sem acesso à VPN", "texto": "Não conecto desde ontem."})
+        self.assertEqual(r.json["acao"], "novo")
+        numero = r.json["numero"]
+        ch = self.sql("SELECT * FROM chamados WHERE numero = %s", [numero])[0]
+        self.assertEqual((ch["origem"], ch["solicitante_email"], ch["cliente_id"]),
+                         ("email", "carla@alfalog.com.br", self.ids["alfa"]))
+        # duplicado é ignorado
+        self.assertEqual(self.chamar("entrada", {"message_id": "m1", "de": "carla@alfalog.com.br"}).json["acao"],
+                         "duplicado")
+        # confirmação foi enfileirada e sai pela fila
+        fila = self.chamar("saida").json["emails"]
+        conf = [e for e in fila if e["para"] == "carla@alfalog.com.br"]
+        self.assertTrue(conf and f"[#{numero}]" in conf[0]["assunto"])
+        self.assertEqual(self.chamar("enviados", {"ids": [e["id"] for e in fila]}).json["confirmados"], len(fila))
+        self.assertEqual(self.chamar("saida").json["emails"], [])
+        # técnico responde no sistema -> notificação por e-mail
+        eq = self.cliente_http("ana@portosolucoes.com.br")
+        self.post(eq, f"/chamados/{numero}/responder", {"texto": "Reinicie o cliente VPN, por favor.",
+                                                        "status_apos": "aguardando_cliente"})
+        fila = self.chamar("saida").json["emails"]
+        self.assertEqual(len(fila), 1)
+        self.assertIn("Reinicie o cliente VPN", fila[0]["corpo"])
+        self.chamar("enviados", {"ids": [fila[0]["id"]]})
+        # cliente responde por e-mail (assunto com [#n]) -> vira mensagem e retoma atendimento
+        r = self.chamar("entrada", {"message_id": "m2", "thread_id": "t1", "de": "carla@alfalog.com.br",
+                                    "assunto": f"Re: [#{numero}] Sem acesso à VPN",
+                                    "texto": "Funcionou!\n\nOn Thu, Oct 23, 2026 Suporte wrote:\n> Reinicie"})
+        self.assertEqual(r.json["acao"], "resposta")
+        msgs = self.sql("SELECT texto FROM chamado_interacoes c JOIN chamados x ON x.id = c.chamado_id "
+                        "WHERE x.numero = %s ORDER BY c.id", [numero])
+        self.assertEqual(msgs[-1]["texto"], "Funcionou!")
+        self.assertEqual(self.sql("SELECT status FROM chamados WHERE numero = %s", [numero])[0]["status"],
+                         "em_atendimento")
+        # nota interna não gera e-mail
+        self.post(eq, f"/chamados/{numero}/responder", {"texto": "nota", "interna": "1"})
+        self.assertEqual(self.chamar("saida").json["emails"], [])
+
+    def test_remetente_desconhecido(self):
+        r = self.chamar("entrada", {"message_id": "x9", "de": "spam@qualquer.com", "assunto": "Oferta",
+                                    "texto": "compre"})
+        self.assertEqual(r.json["acao"], "recusado")
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        self.assertIn(b"spam@qualquer.com", adm.get("/emails-recusados").data)
+
+    def test_intruso_nao_responde_chamado_alheio(self):
+        num = self.sql("SELECT numero FROM chamados WHERE cliente_id = %s LIMIT 1", [self.ids["beta"]])[0]["numero"]
+        r = self.chamar("entrada", {"message_id": "x10", "de": "maria@alfalog.com.br",
+                                    "assunto": f"Re: [#{num}]", "texto": "oi"})
+        self.assertEqual(r.json["acao"], "recusado")
+
+
+class TestImportacao(Base):
+    def planilha(self, clientes=(), contratos=(), contatos=()):
+        import io
+        from openpyxl import load_workbook
+        from app.importacao import gerar_modelo
+        wb = load_workbook(io.BytesIO(gerar_modelo()))
+        for aba, linhas in (("Clientes", clientes), ("Contratos", contratos), ("Contatos", contatos)):
+            ws = wb[aba]
+            for col in range(1, ws.max_column + 1):
+                ws.cell(row=2, column=col).value = None
+            for i, l in enumerate(linhas, start=2):
+                for j, v in enumerate(l, start=1):
+                    ws.cell(row=i, column=j, value=v)
+        buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+        return buf
+
+    def enviar(self, arquivo):
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        return self.post(adm, "/importar", {"planilha": (arquivo, "clientes.xlsx")},
+                         content_type="multipart/form-data")
+
+    def test_modelo(self):
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        r = adm.get("/importar/modelo.xlsx")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.data[:2] == b"PK")
+        self.assertEqual(adm.get("/importar").status_code, 200)
+
+    def test_importacao_ok(self):
+        r = self.enviar(self.planilha(
+            clientes=[("Delta Engenharia Ltda", "Delta", "33.445.566/0001-86", None, None, "delta.eng.br", None)],
+            contratos=[("Delta", "Banco de horas", "Pacote 20h", None, None, "150,00", 20, None, "01/10/2026"),
+                       ("Alfa Logística", "Hora avulsa", "Avulso", None, None, 200, None, None, "2026-10-01")],
+            contatos=[("33445566000186", "Pedro", "pedro@delta.eng.br", None)]))
+        self.assertIn("Importação concluída".encode(), r.data, r.data[-1500:])
+        cid = self.sql("SELECT id FROM clientes WHERE cnpj = '33445566000186'")[0]["id"]
+        self.assertEqual(self.sql("SELECT count(*) AS n FROM contratos WHERE cliente_id = %s", [cid])[0]["n"], 1)
+        self.assertEqual(self.sql("SELECT horas_pacote FROM contratos WHERE cliente_id = %s", [cid])[0]["horas_pacote"], 20)
+        self.assertTrue(self.sql("SELECT 1 FROM contratos WHERE cliente_id = %s AND tipo = 'hora_avulsa'",
+                                 [self.ids["alfa"]]))
+        self.assertTrue(self.sql("SELECT 1 FROM usuarios WHERE email = 'pedro@delta.eng.br' AND cliente_id = %s", [cid]))
+
+    def test_importacao_com_erro_nao_grava(self):
+        r = self.enviar(self.planilha(
+            clientes=[("Ômega SA", "Ômega", None, None, None, None, None)],
+            contratos=[("Ômega", "Mensal fixo", "Suporte", None, None, None, None, None, "01/10/2026")],
+            contatos=[("Inexistente", "Zé", "ze@x.com", None)]))
+        self.assertIn("Nada foi gravado".encode(), r.data)
+        self.assertIn("preencha Valor mensal".encode(), r.data)
+        self.assertIn("Inexistente".encode(), r.data)
+        self.assertFalse(self.sql("SELECT 1 FROM clientes WHERE razao_social = 'Ômega SA'"))
+
+
+class TestMigracoes(Base):
+    def test_atualizar_idempotente(self):
+        with self.app.app_context():
+            from app.cli import atualizar_banco
+            self.assertEqual(atualizar_banco(), [])
+        self.assertTrue(self.sql("SELECT 1 FROM schema_migracoes WHERE arquivo = '020_email.sql'"))
+
+
+class TestPoliticasSLA(Base):
+    def test_politica_por_contrato(self):
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        prazos = {"critica_resposta": "30m", "critica_solucao": "2h", "alta_resposta": "1h", "alta_solucao": "4h",
+                  "media_resposta": "2h", "media_solucao": "10h", "baixa_resposta": "4h", "baixa_solucao": "20h"}
+        r = self.post(adm, "/config/sla", {"acao": "criar", "nome": "Premium", **prazos}, follow_redirects=True)
+        self.assertIn("Premium".encode(), r.data)
+        pid = self.sql("SELECT id FROM sla_politicas WHERE nome = 'Premium'")[0]["id"]
+        self.assertEqual(self.sql("SELECT minutos_solucao FROM sla_regras WHERE politica_id = %s AND prioridade = 'critica'",
+                                  [pid])[0]["minutos_solucao"], 120)
+        # erro: solução menor que resposta
+        r = self.post(adm, "/config/sla", {"acao": "criar", "nome": "Ruim", **{**prazos, "alta_solucao": "30m"}},
+                      follow_redirects=True)
+        self.assertIn("não pode ser menor".encode(), r.data)
+        # contrato da Beta passa a usar Premium
+        ct = self.sql("SELECT * FROM contratos WHERE id = %s", [self.ids["ct_beta"]])[0]
+        dados = {k: ("" if ct[k] is None else str(ct[k])) for k in
+                 ["tipo", "descricao", "valor_mensal", "franquia_horas", "valor_hora", "horas_pacote", "valor_total",
+                  "data_inicio", "data_fim", "dia_vencimento", "indice_reajuste", "mes_reajuste"]}
+        self.post(adm, f"/contratos/{self.ids['ct_beta']}", {**dados, "ativo": "1", "sla_politica_id": str(pid)})
+        self.assertEqual(self.sql("SELECT sla_politica_id FROM contratos WHERE id = %s", [self.ids["ct_beta"]])[0]
+                         ["sla_politica_id"], pid)
+        # política em uso não pode ser excluída
+        r = self.post(adm, "/config/sla", {"acao": "excluir", "politica_id": str(pid)}, follow_redirects=True)
+        self.assertIn("em uso".encode(), r.data)
+        # chamado crítico da Beta usa 2h úteis (Premium) e não 4h (padrão)
+        cli = self.cliente_http("joao@clinicabeta.com.br")
+        r = self.post(cli, "/portal/chamados/novo", {"titulo": "Servidor fora", "descricao": "x", "prioridade": "critica"})
+        num = int(r.headers["Location"].rstrip("/").split("/")[-1])
+        c = self.sql("""SELECT fn_minutos_uteis_entre(criado_em, prazo_solucao) AS m,
+                               fn_somar_minutos_uteis(criado_em, 120) = prazo_solucao AS ok
+                          FROM chamados WHERE numero = %s""", [num])[0]
+        self.assertTrue(c["ok"])
+
+
+class TestLogo(Base):
+    def test_logo_padrao_e_troca(self):
+        import io
+        c = self.app.test_client()
+        r = c.get("/marca/logo")
+        self.assertEqual((r.status_code, r.mimetype), (200, "image/png"))
+        padrao = r.data
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        self.assertEqual(adm.get("/config/marca").status_code, 200)
+        r = self.post(adm, "/config/marca", {"logo": (io.BytesIO(b"<svg>x</svg>"), "x.svg")},
+                      content_type="multipart/form-data", follow_redirects=True)
+        self.assertIn("Formato não aceito".encode(), r.data)
+        novo = b"\x89PNG\r\n\x1a\n" + bytes(range(256)) * 4
+        self.post(adm, "/config/marca", {"logo": (io.BytesIO(novo), "logo.png")}, content_type="multipart/form-data")
+        self.assertEqual(c.get("/marca/logo").data, novo)
+        self.post(adm, "/config/marca", {"acao": "restaurar"})
+        self.assertEqual(c.get("/marca/logo").data, padrao)
+        # técnico não troca logo
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        self.assertEqual(tec.get("/config/marca").status_code, 403)
+
+
+class TestCriarAdmin(Base):
+    def test_criar_admin(self):
+        r = self.app.test_cli_runner().invoke(args=["criar-admin", "Novo.Admin@portosolucoes.com.br", "--nome", "Novo"])
+        self.assertEqual(r.exit_code, 0, r.output)
+        senha = r.output.strip().split(": ")[-1]
+        self.assertEqual(len(senha), 12)
+        c = self.cliente_http()
+        r = self.post(c, "/entrar", {"email": "novo.admin@portosolucoes.com.br", "senha": f" {senha} "})
+        self.assertEqual(r.headers["Location"], "/painel")
+        # reaplicar em usuário existente (ex.: cliente) vira admin ativo
+        r = self.app.test_cli_runner().invoke(args=["criar-admin", "maria@alfalog.com.br"])
+        u = self.sql("SELECT perfil, cliente_id, ativo FROM usuarios WHERE email = 'maria@alfalog.com.br'")[0]
+        self.assertEqual((u["perfil"], u["cliente_id"], u["ativo"]), ("admin", None, True))

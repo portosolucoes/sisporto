@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block titulo %}Importar planilha{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><div class="muted small"><a href="{{ url_for('equipe.clientes') }}">Clientes</a></div><h1>Importar clientes, contratos e contatos</h1></div></div>
+{% if resultado and resultado.erros %}
+<div class="card" style="border-color:#f5c2bd"><h2>Nada foi gravado – corrija a planilha</h2><ul>{% for e in resultado.erros %}<li>{{ e }}</li>{% endfor %}</ul></div>
+{% elif resultado %}
+<div class="card" style="border-color:#b7e1c9"><h2>Importação concluída</h2>
+<p>{{ resultado.resumo.clientes }} cliente(s), {{ resultado.resumo.contratos }} contrato(s) e {{ resultado.resumo.contatos }} contato(s) cadastrados.</p>
+{% if resultado.acessos %}<p><b>Senhas temporárias dos contatos</b> – copie agora e envie a cada um (não serão mostradas de novo):</p>
+<div class="tabela"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Senha temporária</th></tr></thead><tbody>
+{% for a in resultado.acessos %}<tr><td>{{ a.nome }}</td><td>{{ a.email }}</td><td><code>{{ a.senha }}</code></td></tr>{% endfor %}</tbody></table></div>{% endif %}
+</div>
+{% endif %}
+<div class="grid g2">
+<div class="card"><h2>1. Baixe o modelo</h2><p class="muted">Planilha com as abas Clientes, Contratos e Contatos, exemplos e instruções.</p>
+<a class="btn sec" href="{{ url_for('equipe.importar_modelo') }}">Baixar modelo (.xlsx)</a></div>
+<form class="card" method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}">
+<h2>2. Envie a planilha preenchida</h2><p class="muted">O sistema confere tudo antes de gravar. Se houver erro, nada é salvo.</p>
+<div class="campo"><input type="file" name="planilha" accept=".xlsx" required></div><button class="btn">Importar</button></form>
+</div>
+{% endblock %}

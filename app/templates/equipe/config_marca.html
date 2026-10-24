@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block titulo %}Logo da empresa{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Logo da empresa</h1><div class="muted">Aparece no menu, na tela de login e no portal dos clientes.</div></div></div>
+<div class="grid g2">
+  <div class="card"><h2>Logo atual</h2>
+    <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:20px;text-align:center">
+      <img src="{{ url_for('logo') }}?v={{ personalizado.atualizado_em.timestamp()|int if personalizado else 0 }}" alt="Logo atual" style="max-width:100%;max-height:140px"></div>
+    <p class="muted small">{{ 'Personalizado, enviado em ' ~ (personalizado.atualizado_em|data_hora) if personalizado else 'Logo padrão (temporário).' }}</p>
+    {% if personalizado %}<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn sec" name="acao" value="restaurar">Voltar ao logo padrão</button></form>{% endif %}
+  </div>
+  <form class="card" method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}">
+    <h2>Trocar logo</h2>
+    <p class="muted">PNG, JPG ou WEBP, até 1 MB. Prefira imagem horizontal com fundo branco ou transparente (ex.: 600 × 200 px).</p>
+    <div class="campo"><input type="file" name="logo" accept="image/png,image/jpeg,image/webp" required></div>
+    <button class="btn">Enviar novo logo</button>
+  </form>
+</div>
+{% endblock %}

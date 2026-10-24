@@ -16,7 +16,7 @@ INSTANCIA="sisporto-db"
 BANCO="sisporto"
 USUARIO_DB="sisporto"
 SERVICO="sisporto"
-ADMIN_EMAIL="contato@portosolucoes.com.br"
+ADMIN_EMAIL="${ADMIN_EMAIL:-contato@portosolucoes.com.br}"
 
 say(){ echo -e "\n\033[1;34m==> $*\033[0m"; }
 gcloud config set project "$PROJECT_ID" >/dev/null
@@ -48,7 +48,16 @@ if ! gcloud secrets describe sisporto-database-url >/dev/null 2>&1; then
     gcloud secrets create sisporto-database-url --data-file=-
   openssl rand -hex 32 | tr -d '\n' | gcloud secrets create sisporto-secret-key --data-file=-
 fi
-for S in sisporto-database-url sisporto-secret-key; do
+gcloud secrets describe sisporto-integracao-token >/dev/null 2>&1 || \
+  openssl rand -hex 24 | tr -d '\n' | gcloud secrets create sisporto-integracao-token --data-file=-
+SEGREDOS="DATABASE_URL=sisporto-database-url:latest,SECRET_KEY=sisporto-secret-key:latest,INTEGRACAO_TOKEN=sisporto-integracao-token:latest"
+LISTA_SEGREDOS="sisporto-database-url sisporto-secret-key sisporto-integracao-token"
+# login Google da equipe (opcional – ver infra/gcp/LOGIN-GOOGLE.md)
+if gcloud secrets describe sisporto-google-client-id >/dev/null 2>&1; then
+  SEGREDOS="$SEGREDOS,GOOGLE_CLIENT_ID=sisporto-google-client-id:latest,GOOGLE_CLIENT_SECRET=sisporto-google-client-secret:latest"
+  LISTA_SEGREDOS="$LISTA_SEGREDOS sisporto-google-client-id sisporto-google-client-secret"
+fi
+for S in $LISTA_SEGREDOS; do
   gcloud secrets add-iam-policy-binding "$S" --member="serviceAccount:$SA_RUN" \
     --role=roles/secretmanager.secretAccessor >/dev/null
 done
@@ -59,7 +68,7 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$S
 say "Publicando o sistema no Cloud Run (máx. 2 instâncias)..."
 gcloud run deploy "$SERVICO" --source . --region="$REGIAO" --allow-unauthenticated \
   --add-cloudsql-instances="$CONEXAO" \
-  --set-secrets="DATABASE_URL=sisporto-database-url:latest,SECRET_KEY=sisporto-secret-key:latest" \
+  --set-secrets="$SEGREDOS" \
   --max-instances=2 --min-instances=0 --memory=512Mi --cpu=1 --concurrency=40 --quiet
 
 IMAGEM=$(gcloud run services describe "$SERVICO" --region="$REGIAO" \
@@ -69,17 +78,17 @@ IMAGEM=$(gcloud run services describe "$SERVICO" --region="$REGIAO" \
 tarefa(){  # nome, argumentos separados por vírgula
   gcloud run jobs deploy "$1" --image="$IMAGEM" --region="$REGIAO" \
     --set-cloudsql-instances="$CONEXAO" \
-    --set-secrets="DATABASE_URL=sisporto-database-url:latest,SECRET_KEY=sisporto-secret-key:latest" \
+    --set-secrets="$SEGREDOS" \
     --command=flask --args="$2" --max-retries=0 --quiet >/dev/null
   gcloud run jobs execute "$1" --region="$REGIAO" --wait
 }
 
-say "Criando as tabelas (se ainda não existem)..."
-tarefa sisporto-banco "--app,app,banco-criar" || echo "(tabelas já existiam – ok)"
+say "Criando/atualizando as tabelas do banco..."
+tarefa sisporto-banco "--app,app,banco-atualizar"
 
 if [[ "${PRIMEIRA_SENHA:-}" == "1" || ! -f "$HOME/.sisporto_admin_ok" ]]; then
-  say "Gerando senha temporária do administrador $ADMIN_EMAIL..."
-  tarefa sisporto-senha "--app,app,definir-senha,$ADMIN_EMAIL"
+  say "Criando/corrigindo o administrador $ADMIN_EMAIL e gerando senha temporária..."
+  tarefa sisporto-senha "--app,app,criar-admin,$ADMIN_EMAIL"
   sleep 5
   gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=sisporto-senha \
     AND textPayload:\"Senha temporária\"" --limit=1 --format="value(textPayload)" --freshness=10m
