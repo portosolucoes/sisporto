@@ -15,6 +15,7 @@ from .db import db
 # rotina: (descrição, perfis que têm acesso por padrão)
 ROTINAS = {
     "chamados":      ("Chamados – ver, abrir e atender", {"tecnico", "financeiro"}),
+    "chamados_gerir": ("Alterar contrato, responsável, status e prioridade dos chamados", {"tecnico", "financeiro"}),
     "horas":         ("Lançar horas (em chamados e contratos) e usar o cronômetro", {"tecnico"}),
     "relatorios":    ("Relatórios operacionais (SLA, chamados, contratos, satisfação; horas só as próprias)", {"financeiro"}),
     "relatorios_financeiros": ("Relatórios financeiros (pré-faturamento e rentabilidade)", {"financeiro"}),
@@ -23,6 +24,7 @@ ROTINAS = {
     "contratos":     ("Contratos (incluir, editar, horas liberadas)", {"financeiro"}),
     "importar":      ("Importar planilha de clientes", {"financeiro"}),
     "emails":        ("E-mails não processados", {"tecnico"}),
+    "conhecimento":  ("Base de conhecimento – criar e editar artigos", {"tecnico", "financeiro"}),
     "config":        ("Configurações: SLA, tipos de serviço, integrações e logo", set()),
 }
 

@@ -4,28 +4,39 @@
 {% set volta = voltar or (url_for('equipe.cliente', cliente_id=cliente.id) if cliente else url_for('contratos.lista')) %}
 <div class="topo"><div><div class="muted small"><a href="{{ url_for('contratos.lista') }}">Contratos</a>{% if cliente %} · <a href="{{ url_for('equipe.cliente', cliente_id=cliente.id) }}">{{ cliente.nome_fantasia or cliente.razao_social }}</a>{% endif %}</div>
 <h1>{{ 'Novo contrato' if novo else 'Editar contrato' }}</h1></div></div>
-<form method="post" class="card" style="max-width:820px">
+<form method="post" class="card" style="max-width:900px" id="form-contrato">
   <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="voltar" value="{{ voltar or '' }}">
   {% if not cliente %}<div class="campo"><label>Cliente *</label><select name="cliente_id" required><option value="">Escolha…</option>{% for c in clientes %}<option value="{{ c.id }}" {{ 'selected' if (ct.cliente_id|string) == (c.id|string) or cliente_pre == c.id }}>{{ c.nome }}</option>{% endfor %}</select></div>{% endif %}
   <div class="grid g2">
     <div class="campo"><label>Tipo *</label><select name="tipo" required><option value="">Escolha…</option>
       {% for v in ['mensal_fixo','banco_horas','hora_avulsa','projeto','proposta_avulsa'] %}<option value="{{ v }}" {{ 'selected' if ct.tipo == v }}>{{ v|rotulo('tipo_contrato') }}</option>{% endfor %}</select></div>
-    <div class="campo"><label>Tipo de serviço do projeto</label><select name="tipo_servico_id"><option value="">—</option>{% for t in tipos %}<option value="{{ t.id }}" {{ 'selected' if (ct.tipo_servico_id|string) == (t.id|string) }}>{{ t.nome }}</option>{% endfor %}</select><div class="ajuda">Suporte, Infra, Desenvolvimento… Vira o tipo padrão dos apontamentos deste contrato.</div></div>
     <div class="campo"><label>Descrição *</label><input type="text" name="descricao" value="{{ ct.descricao or '' }}" required placeholder="Ex.: Suporte mensal – 10h"></div>
-    <div class="campo"><label>Valor mensal (R$)</label><input type="text" name="valor_mensal" value="{{ ct.valor_mensal or '' }}"><div class="ajuda">Obrigatório no mensal fixo.</div></div>
-    <div class="campo"><label>Franquia de horas no mês</label><input type="text" name="franquia_horas" value="{{ ct.franquia_horas or '' }}"><div class="ajuda">Mensal fixo: acima disso vira excedente.</div></div>
-    <div class="campo"><label>Valor hora de venda (R$)</label><input type="text" name="valor_hora" value="{{ ct.valor_hora or '' }}"><div class="ajuda">Preço da hora para este cliente: usado em hora avulsa, excedentes, pré-faturamento e rentabilidade.</div></div>
-    <div class="campo"><label>Horas liberadas</label><input type="text" name="horas_pacote" value="{{ ct.horas_pacote or '' }}"><div class="ajuda">Total de horas do pacote ou do projeto/suporte. Obrigatório no banco de horas; o sistema controla o saldo.</div></div>
-    <div class="campo"><label>Valor total (R$)</label><input type="text" name="valor_total" value="{{ ct.valor_total or '' }}"><div class="ajuda">Projeto e proposta avulsa.</div></div>
-    <div class="campo"><label>Dia de vencimento</label><input type="number" min="1" max="28" name="dia_vencimento" value="{{ ct.dia_vencimento or '' }}"></div>
-    <div class="campo"><label>Início *</label><input type="date" name="data_inicio" value="{{ ct.data_inicio or '' }}" required></div>
-    <div class="campo"><label>Fim / validade</label><input type="date" name="data_fim" value="{{ ct.data_fim or '' }}"></div>
+    <div class="campo"><label>Valor mensal (R$)</label><input type="text" name="valor_mensal" value="{{ ct.valor_mensal or '' }}" inputmode="decimal"><div class="ajuda">Obrigatório no mensal fixo. Sugestão automática: valor hora × franquia.</div></div>
+    <div class="campo"><label>Franquia de horas no mês</label><input type="text" name="franquia_horas" value="{{ ct.franquia_horas or '' }}" inputmode="decimal"><div class="ajuda">Mensal fixo: acima disso vira excedente.</div></div>
+    <div class="campo"><label>Valor hora de venda (R$)</label><input type="text" name="valor_hora" value="{{ ct.valor_hora or '' }}" inputmode="decimal"><div class="ajuda">Preço da hora para este cliente: usado em hora avulsa, excedentes, pré-faturamento e rentabilidade.</div></div>
+    <div class="campo"><label>Horas liberadas</label><input type="text" name="horas_pacote" value="{{ ct.horas_pacote or '' }}" inputmode="decimal"><div class="ajuda">Total de horas do pacote ou do projeto/suporte (no mensal fixo, por mês). Preenchida pela franquia ou pela soma dos itens; o sistema controla o saldo.</div></div>
+    <div class="campo"><label>Valor total (R$)</label><input type="text" name="valor_total" value="{{ ct.valor_total or '' }}" inputmode="decimal"><div class="ajuda">Projeto e proposta avulsa.</div></div>
+    <div class="campo"><label>Dia de vencimento</label><input type="number" min="1" max="31" name="dia_vencimento" value="{{ ct.dia_vencimento or '' }}"></div>
+    <div class="campo"><label>Início *</label><input type="date" name="data_inicio" id="data_inicio" value="{{ ct.data_inicio or '' }}" required></div>
+    <div class="campo"><label>Fim / validade</label><input type="date" name="data_fim" id="data_fim" min="{{ ct.data_inicio or '' }}" value="{{ ct.data_fim or '' }}"></div>
     <div class="campo"><label>Índice de reajuste</label><input type="text" name="indice_reajuste" value="{{ ct.indice_reajuste or '' }}" placeholder="IPCA, IGP-M"></div>
     <div class="campo"><label>Política de SLA (prazos)</label><select name="sla_politica_id">
       {% for p in politicas %}<option value="{{ '' if p.padrao else p.id }}" {{ 'selected' if (ct.sla_politica_id|string) == (p.id|string) or (p.padrao and not ct.sla_politica_id) }}>{{ p.nome }}{{ ' (padrão)' if p.padrao }}</option>{% endfor %}
       </select><div class="ajuda">Define os prazos por prioridade dos chamados deste contrato. <a href="{{ url_for('equipe.config_sla') }}">Gerenciar políticas</a></div></div>
     <div class="campo"><label>Mês do reajuste</label><input type="number" min="1" max="12" name="mes_reajuste" value="{{ ct.mes_reajuste or '' }}"></div>
   </div>
+  <h3 style="margin-top:8px">Itens do contrato (tipos de serviço)</h3>
+  <p class="ajuda" style="margin-top:0">Inclua cada tipo de serviço coberto. Horas e valor da hora por item são opcionais: a soma das horas vira as horas liberadas; sem valor, vale o valor hora do contrato. Os apontamentos deste contrato só aceitam os tipos listados.</p>
+  <div class="tabela itens-contrato"><table><thead><tr><th>Tipo de serviço</th><th style="width:110px">Horas</th><th style="width:130px">Valor hora (R$)</th><th>Observação</th><th></th></tr></thead>
+  <tbody id="itens">
+  {% for it in (itens or [{}]) %}<tr class="item">
+    <td><select name="item_tipo" aria-label="Tipo de serviço"><option value="">—</option>{% for t in tipos %}<option value="{{ t.id }}" {{ 'selected' if (it.tipo_servico_id|string) == (t.id|string) }}>{{ t.nome }}</option>{% endfor %}</select></td>
+    <td><input type="text" name="item_horas" value="{{ it.horas if it.horas is not none else '' }}" inputmode="decimal" aria-label="Horas"></td>
+    <td><input type="text" name="item_valor" value="{{ it.valor_hora if it.valor_hora is not none else '' }}" inputmode="decimal" aria-label="Valor hora"></td>
+    <td><input type="text" name="item_desc" value="{{ it.descricao or '' }}" aria-label="Observação"></td>
+    <td><button type="button" class="link-btn remover-item" aria-label="Remover item">×</button></td></tr>{% endfor %}
+  </tbody></table></div>
+  <p><button type="button" class="btn sec peq" id="add-item">+ Adicionar tipo de serviço</button> <span class="muted small" id="soma-itens"></span></p>
   <div class="campo"><label>Observações</label><textarea name="observacoes" style="min-height:70px">{{ ct.observacoes or '' }}</textarea></div>
   {% if not novo %}<div class="campo"><label class="check"><input type="checkbox" name="ativo" value="1" {{ 'checked' if ct.ativo in (true, '1') }}> Contrato ativo</label></div>{% endif %}
   <button class="btn">Salvar</button> <a class="btn sec" href="{{ volta }}">Cancelar</a>

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block titulo %}Base de conhecimento{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Base de conhecimento</h1><div class="muted">Soluções documentadas pela equipe. Artigos públicos aparecem na Ajuda do portal e são sugeridos ao cliente quando ele abre um chamado.</div></div>
+<a class="btn" href="{{ url_for('kb.editar') }}">+ Novo artigo</a></div>
+<form method="get" class="card"><input type="search" name="q" value="{{ q }}" placeholder="Buscar por palavras do problema…" aria-label="Buscar"></form>
+<div class="tabela">{% if artigos %}<table><thead><tr><th>Artigo</th><th>Categoria</th><th>Visível para</th><th class="num">Leituras</th><th></th></tr></thead><tbody>
+{% for a in artigos %}<tr><td><a href="{{ url_for('kb.ver', aid=a.id) }}"><b>{{ a.titulo }}</b></a><div class="muted small">{{ a.resumo }}{{ '…' if a.resumo|length >= 220 }}</div></td><td class="small">{{ a.categoria or '—' }}</td>
+<td>{% if a.publico %}<span class="selo ok">Clientes e equipe</span>{% else %}<span class="selo">Só equipe</span>{% endif %}</td><td class="num">{{ a.visualizacoes }}</td>
+<td><a class="btn sec peq" href="{{ url_for('kb.editar', aid=a.id) }}">Editar</a></td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="vazio">{{ 'Nada encontrado.' if q else 'Nenhum artigo ainda. Comece documentando os problemas mais frequentes.' }}</div>{% endif %}</div>
+{% endblock %}

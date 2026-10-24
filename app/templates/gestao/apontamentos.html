@@ -2,18 +2,21 @@
 {% block titulo %}Apontamentos (admin){% endblock %}
 {% block conteudo %}
 <div class="topo"><div><h1>Apontamentos</h1><div class="muted">Edite, aprove, exclua ou gere lançamentos de qualquer recurso.</div></div>
-<a class="btn" href="{{ url_for('gestao.apontamento_admin') }}">+ Gerar apontamento</a></div>
+<div>{% set q = request.query_string.decode() %}<a class="btn sec" href="?{{ q }}{{ '&' if q }}formato=xlsx">Excel</a> <a class="btn sec" href="?{{ q }}{{ '&' if q }}formato=pdf">PDF</a> <a class="btn" href="{{ url_for('gestao.apontamento_admin') }}">+ Gerar apontamento</a></div></div>
 <form method="get" class="card linha filtros">
   <div><label>Recurso</label><select name="recurso"><option value="">Todos</option>{% for r in recursos %}<option value="{{ r.id }}" {{ 'selected' if f.recurso == r.id|string }}>{{ r.nome }}</option>{% endfor %}</select></div>
   <div><label>Cliente</label><select name="cliente"><option value="">Todos</option>{% for c in clientes %}<option value="{{ c.id }}" {{ 'selected' if f.cliente == c.id|string }}>{{ c.nome }}</option>{% endfor %}</select></div>
   <div><label>Status</label><select name="status"><option value="">Todos</option>{% for s in ['pendente','aprovado','rejeitado'] %}<option value="{{ s }}" {{ 'selected' if f.status == s }}>{{ s|rotulo('apontamento') }}</option>{% endfor %}</select></div>
   <div><label>De</label><input type="date" name="de" value="{{ f.de }}"></div>
   <div><label>Até</label><input type="date" name="ate" value="{{ f.ate }}"></div>
+  <div style="width:150px"><label>Ticket (nº ou título)</label><input type="search" name="chamado" value="{{ f.chamado }}" placeholder="1002 ou backup"></div>
+  <div><label>Contrato</label><select name="contrato"><option value="">Todos</option>{% for ct in contratos %}<option value="{{ ct.id }}" {{ 'selected' if f.contrato == ct.id|string }}>{{ ct.cliente }} – {{ ct.descricao }}</option>{% endfor %}</select></div>
+  <div style="flex:1;min-width:160px"><label>O que foi feito</label><input type="search" name="descricao" value="{{ f.descricao }}" placeholder="parte da descrição"></div>
   <button class="btn sec">Filtrar</button>
 </form>
-<div class="tabela">{% if linhas %}<table><thead><tr><th>Data</th><th>Recurso</th><th>Cliente</th><th>Chamado / contrato</th><th>Tipo</th><th>O que foi feito</th><th class="num">Tempo</th><th>Fat.</th><th>Status</th><th></th></tr></thead><tbody>
+<div class="tabela">{% if linhas %}<table><thead><tr><th>Data</th><th>Recurso</th><th>Cliente</th><th>Chamado</th><th>Título</th><th>Contrato</th><th>Tipo</th><th>O que foi feito</th><th class="num">Tempo</th><th>Fat.</th><th>Status</th><th></th></tr></thead><tbody>
 {% for a in linhas %}<tr><td>{{ a.data|data }}</td><td>{{ a.recurso }} <span class="muted small">{{ a.codigo }}</span></td><td>{{ a.cliente or '—' }}</td>
-<td>{% if a.numero %}<a href="{{ url_for('equipe.chamado', numero=a.numero) }}">#{{ a.numero }}</a>{% else %}<span class="small">{{ a.contrato or '—' }}</span>{% endif %}</td>
+<td>{% if a.numero %}<a href="{{ url_for('equipe.chamado', numero=a.numero) }}">#{{ a.numero }}</a>{% else %}—{% endif %}</td><td class="small">{{ a.titulo or '—' }}</td><td class="small">{{ a.contrato or '—' }}</td>
 <td class="small">{{ a.tipo or '—' }}</td><td>{{ a.descricao }}</td><td class="num">{{ a.minutos|horas }}</td><td>{{ 'Sim' if a.faturavel else 'Não' }}</td><td>{{ m.selo(a.status,'apontamento') }}</td>
 <td><a class="btn sec peq" href="{{ url_for('gestao.apontamento_admin', ap_id=a.id) }}">Editar</a></td></tr>{% endfor %}
 </tbody></table>{% else %}<div class="vazio">Nenhum apontamento no filtro.</div>{% endif %}</div>

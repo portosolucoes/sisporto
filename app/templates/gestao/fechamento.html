@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}Fechamento de período{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Fechamento de período</h1><div class="muted">Depois de aprovar as horas, feche o período: ninguém (nem administrador) cria, altera ou exclui lançamentos com data dentro dele até que seja reaberto. Garante que o faturado não mude depois.</div></div></div>
+<div class="grid g2">
+<div class="card" style="min-width:0"><h2>Fechar período</h2>
+<form method="get" class="linha"><div><label>De</label><input type="date" name="de" value="{{ de.isoformat() }}"></div><div><label>Até</label><input type="date" name="ate" value="{{ ate.isoformat() }}" max="{{ hoje.isoformat() }}"></div><button class="btn sec">Conferir</button></form>
+<div class="tabela" style="margin:12px 0">{% if resumo %}<table><thead><tr><th>Recurso</th><th class="num">Lançamentos</th><th class="num">Horas</th><th class="num">Aprovadas</th><th class="num">Pendentes</th></tr></thead><tbody>
+{% for r in resumo %}<tr><td>{{ r.recurso }}</td><td class="num">{{ r.n }}</td><td class="num">{{ r.minutos|horas }}</td><td class="num">{{ r.aprovados|horas }}</td><td class="num {{ 'erro-txt' if r.pendentes }}">{{ r.pendentes }}</td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="vazio">Nenhuma hora no período.</div>{% endif %}</div>
+{% set pend = resumo|sum(attribute='pendentes') %}
+{% if pend %}<p class="erro-txt small">Há {{ pend }} lançamento(s) pendente(s). <a href="{{ url_for('gestao.aprovacao', de=de.isoformat(), ate=ate.isoformat()) }}">Aprovar agora</a></p>{% endif %}
+<form method="post" class="linha">{{ m.csrf_input() }}<input type="hidden" name="acao" value="fechar"><input type="hidden" name="de" value="{{ de.isoformat() }}"><input type="hidden" name="ate" value="{{ ate.isoformat() }}">
+<div style="flex:1;min-width:180px"><input type="text" name="observacao" placeholder="Observação (ex.: faturado em 05/11)" aria-label="Observação"></div>
+<button class="btn" {{ 'disabled' if pend }} onclick="return confirm('Fechar o período de {{ de|data }} a {{ ate|data }}?')">🔒 Fechar {{ de|data }} a {{ ate|data }}</button></form>
+</div>
+<div class="card" style="min-width:0"><h2>Períodos fechados</h2>
+{% if periodos %}<ul class="lista-simples">{% for p in periodos %}<li><b>{{ p.inicio|data }} a {{ p.fim|data }}</b> · {{ p.minutos|horas }} aprovadas
+<div class="muted small">Fechado por {{ p.quem or '—' }} em {{ p.fechado_em|data_hora }}{% if p.observacao %} · {{ p.observacao }}{% endif %}</div>
+<form method="post" style="display:inline">{{ m.csrf_input() }}<input type="hidden" name="acao" value="reabrir"><input type="hidden" name="id" value="{{ p.id }}"><button class="link-btn" style="color:var(--brand-2);font-size:13px" onclick="return confirm('Reabrir este período? As horas voltam a poder ser alteradas.')">Reabrir</button></form></li>{% endfor %}</ul>
+{% else %}<div class="muted">Nenhum período fechado.</div>{% endif %}</div>
+</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}Respostas prontas{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Respostas prontas</h1><div class="muted">Modelos para responder chamados com um clique. Use {cliente}, {solicitante}, {numero}, {titulo} e {recurso}: o sistema troca pelos dados do chamado.</div></div></div>
+<div class="grid g-2-1">
+<div style="min-width:0">
+{% for r in lista %}<div class="card"><div style="display:flex;justify-content:space-between;gap:10px"><b>{{ r.titulo }}</b>{% if not r.ativo %}<span class="selo">Inativa</span>{% endif %}</div>
+{% if editar == r.id %}
+<form method="post" style="margin-top:10px">{{ m.csrf_input() }}<input type="hidden" name="id" value="{{ r.id }}">
+  <div class="campo"><input type="text" name="titulo" value="{{ r.titulo }}" required aria-label="Título"></div>
+  <div class="campo"><textarea name="texto" rows="6" required aria-label="Texto">{{ r.texto }}</textarea></div>
+  <label class="check"><input type="checkbox" name="ativo" value="1" {{ 'checked' if r.ativo }}> Ativa</label>
+  <div style="margin-top:8px"><button class="btn">Salvar</button> <button class="btn perigo" name="acao" value="excluir" formnovalidate onclick="return confirm('Excluir?')">Excluir</button> <a class="btn sec" href="{{ url_for('kb.respostas') }}">Cancelar</a></div>
+</form>
+{% else %}<div class="txt small" style="white-space:pre-wrap;margin-top:6px">{{ r.texto }}</div><a class="small" href="{{ url_for('kb.respostas', editar=r.id) }}">Editar</a>{% endif %}
+</div>{% else %}<div class="card vazio">Nenhuma resposta pronta ainda.</div>{% endfor %}
+</div>
+<form method="post" class="card" style="min-width:0">{{ m.csrf_input() }}<h2>Nova resposta</h2>
+  <div class="campo"><label>Título</label><input type="text" name="titulo" required placeholder="Ex.: Pedido de acesso remoto"></div>
+  <div class="campo"><label>Texto</label><textarea name="texto" rows="8" required placeholder="Olá, {solicitante}. Para seguirmos com o chamado #{numero}…"></textarea></div>
+  <button class="btn">Incluir</button>
+</form>
+</div>
+{% endblock %}

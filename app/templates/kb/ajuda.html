@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block titulo %}Ajuda{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Ajuda</h1><div class="muted">Soluções rápidas para os problemas mais comuns. Não achou? Abra um chamado.</div></div>
+<a class="btn" href="{{ url_for('portal.chamado_novo') }}">Abrir chamado</a></div>
+<form method="get" class="card"><input type="search" name="q" value="{{ q }}" placeholder="Descreva o problema: ex. impressora não imprime" aria-label="Buscar"></form>
+{% for a in artigos %}<a class="card" href="{{ url_for('kb.ver', aid=a.id) }}" style="display:block;color:inherit"><b>{{ a.titulo }}</b>{% if a.categoria %} <span class="selo">{{ a.categoria }}</span>{% endif %}<div class="muted small" style="margin-top:4px">{{ a.resumo }}{{ '…' if a.resumo|length >= 220 }}</div></a>
+{% else %}<div class="card vazio">{{ 'Nenhum artigo encontrado para essa busca.' if q else 'Ainda não há artigos publicados.' }}</div>{% endfor %}
+{% endblock %}

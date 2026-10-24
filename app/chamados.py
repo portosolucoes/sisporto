@@ -23,6 +23,31 @@ def buscar(numero: int, cliente_id: int | None = None):
     return ch
 
 
+def visivel(c, usuario=None) -> bool:
+    """Equipe: admin vê todos; os demais veem chamados sem responsável ou atribuídos a si."""
+    from flask import g
+    u = usuario or g.usuario
+    return u["perfil"] == "admin" or not c.get("responsavel_id") or c["responsavel_id"] == u["id"]
+
+
+def filtro_visivel(alias=""):
+    """Trecho SQL + parâmetros com a mesma regra de visível() para listas."""
+    from flask import g
+    if g.usuario["perfil"] == "admin":
+        return "TRUE", []
+    p = f"{alias}." if alias else ""
+    return f"({p}responsavel_id IS NULL OR {p}responsavel_id = %s)", [g.usuario["id"]]
+
+
+def buscar_equipe(numero: int):
+    """Chamado para a equipe, respeitando a visibilidade por responsável."""
+    from flask import abort
+    c = buscar(numero)
+    if not visivel(c):
+        abort(403)
+    return c
+
+
 def criar(*, cliente_id, titulo, descricao, prioridade, origem, solicitante_id=None,
           solicitante_email=None, contrato_id=None, categoria=None, responsavel_id=None):
     titulo, descricao = (titulo or "").strip(), (descricao or "").strip()
@@ -34,6 +59,11 @@ def criar(*, cliente_id, titulo, descricao, prioridade, origem, solicitante_id=N
         ok = db().val("SELECT 1 FROM contratos WHERE id = %s AND cliente_id = %s", [contrato_id, cliente_id])
         if not ok:
             raise ValueError("Contrato não pertence ao cliente.")
+    else:  # cliente com um único contrato válido: vincula automaticamente
+        from .saldos import situacao_contrato
+        validos = [r["id"] for r in db().all("SELECT id FROM contratos WHERE cliente_id = %s AND ativo", [cliente_id])
+                   if situacao_contrato(r["id"])["ok"]]
+        contrato_id = validos[0] if len(validos) == 1 else None
     novo = db().one(
         """INSERT INTO chamados (cliente_id, contrato_id, solicitante_id, solicitante_email, responsavel_id,
                                 titulo, descricao, categoria, prioridade, origem)

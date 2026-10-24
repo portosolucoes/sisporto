@@ -28,9 +28,11 @@
       {%- endmacro %}
       {% if usuario.perfil == 'cliente' %}
         {% call pasta('Dashboards', '📊', ['portal.painel']) %}{{ item('portal.painel', 'Painel') }}{% endcall %}
-        {% call pasta('Atendimento', '🎧', ['portal.chamados', 'portal.chamado', 'portal.chamado_novo']) %}
+        {% call pasta('Atendimento', '🎧', ['portal.chamados', 'portal.chamado', 'portal.chamado_novo', 'kb.ajuda', 'kb.ver', 'extras.portal_lista']) %}
           {{ item('portal.chamados', 'Meus chamados', ep in ('portal.chamados', 'portal.chamado')) }}
           {{ item('portal.chamado_novo', 'Abrir chamado') }}
+          {{ item('kb.ajuda', 'Ajuda', ep in ('kb.ajuda', 'kb.ver')) }}
+          <a href="{{ url_for('extras.portal_lista') }}" class="{{ 'ativo' if ep == 'extras.portal_lista' }}">Horas extras{% if extras_pendentes %} <span class="contador">{{ extras_pendentes }}</span>{% endif %}</a>
         {% endcall %}
         {% call pasta('Relatórios', '📄', ['portal.horas']) %}{{ item('portal.horas', 'Relatório de horas') }}{% endcall %}
       {% else %}
@@ -39,18 +41,21 @@
           {{ item('equipe.painel', 'Painel operacional') }}
           {% if pode('dashboard') %}{{ item('adm.dashboard', 'Dashboard gerencial') }}{% endif %}
         {% endcall %}
-        {% if pode('chamados') or pode('emails') %}
-        {% call pasta('Atendimento', '🎧', ['equipe.chamados', 'equipe.chamado', 'equipe.chamado_novo', 'equipe.emails_recusados']) %}
+        {% if pode('chamados') or pode('emails') or pode('conhecimento') %}
+        {% call pasta('Atendimento', '🎧', ['equipe.chamados', 'equipe.chamado', 'equipe.chamado_novo', 'equipe.emails_recusados', 'kb.lista', 'kb.ver', 'kb.editar']) %}
           {% if pode('chamados') %}{{ item('equipe.chamados', 'Chamados', ep in ('equipe.chamados', 'equipe.chamado')) }}{{ item('equipe.chamado_novo', 'Novo chamado') }}{% endif %}
           {% if pode('emails') %}{{ item('equipe.emails_recusados', 'E-mails não processados') }}{% endif %}
+          {% if pode('conhecimento') %}{{ item('kb.lista', 'Base de conhecimento', ep in ('kb.lista', 'kb.ver', 'kb.editar')) }}{% endif %}
         {% endcall %}
         {% endif %}
-        {% if pode('horas') or adm %}
-        {% call pasta('Horas', '⏱', ['equipe.horas', 'gestao.apontamento_proprio', 'gestao.aprovacao', 'gestao.apontamentos', 'gestao.apontamento_admin', 'gestao.saldos']) %}
-          {{ item('equipe.horas', 'Minhas horas', ep in ('equipe.horas', 'gestao.apontamento_proprio')) }}
+        {% if pode('horas') or adm or pode('contratos') %}
+        {% call pasta('Horas', '⏱', ['equipe.horas', 'gestao.apontamento_proprio', 'gestao.aprovacao', 'gestao.apontamentos', 'gestao.apontamento_admin', 'gestao.saldos', 'extras.lista', 'gestao.fechamento']) %}
+          {% if pode('horas') or adm %}{{ item('equipe.horas', 'Minhas horas', ep in ('equipe.horas', 'gestao.apontamento_proprio')) }}{% endif %}
           {% if adm %}<a href="{{ url_for('gestao.aprovacao') }}" class="{{ 'ativo' if ep == 'gestao.aprovacao' }}">Aprovação de horas{% if a_aprovar %} <span class="contador">{{ a_aprovar }}</span>{% endif %}</a>
           {{ item('gestao.apontamentos', 'Apontamentos dos recursos', ep in ('gestao.apontamentos', 'gestao.apontamento_admin')) }}
           {{ item('gestao.saldos', 'Saldos de horas') }}{% endif %}
+          {% if adm or pode('contratos') %}{{ item('extras.lista', 'Horas extras') }}{% endif %}
+          {% if adm %}{{ item('gestao.fechamento', 'Fechamento de período') }}{% endif %}
         {% endcall %}
         {% endif %}
         {% if pode('relatorios') %}
@@ -68,8 +73,9 @@
           {% if pode('importar') %}{{ item('equipe.importar', 'Importar planilha') }}{% endif %}
         {% endcall %}
         {% if pode('config') %}
-        {% call pasta('Configurações', '⚙', ['equipe.config_sla', 'equipe.config_integracoes', 'equipe.config_marca']) %}
+        {% call pasta('Configurações', '⚙', ['equipe.config_sla', 'equipe.config_integracoes', 'equipe.config_marca', 'kb.respostas']) %}
           {{ item('equipe.config_sla', 'Prazos (SLA)') }}
+          {{ item('kb.respostas', 'Respostas prontas') }}
           {{ item('equipe.config_integracoes', 'Integrações') }}
           {{ item('equipe.config_marca', 'Logo da empresa') }}
         {% endcall %}
@@ -89,6 +95,7 @@
       <a href="{{ url_for('auth.trocar_senha') }}" style="color:#9fb3cf">Trocar senha</a>
       {% if usuario.perfil != 'cliente' %}<br><a href="{{ url_for('auth.conta_2fa') }}" style="color:#9fb3cf">Verificação em 2 etapas</a>{% endif %}
       <form method="post" action="{{ url_for('auth.sair') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Sair</button></form>
+      <div style="color:#6f819b;font-size:11px;margin-top:8px">SisPorto v{{ versao }}</div>
     </div>
   </aside>
   <main>

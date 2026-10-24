@@ -197,7 +197,9 @@ class TestFluxo(Base):
                       {"data": hoje, "duracao": "1:30", "descricao": "Reinício do AP", "faturavel": "1",
                        "tipo_servico_id": str(self.sql("SELECT id FROM tipos_servico WHERE nome = 'Help desk'")[0]["id"])})
         self.assertEqual(r.status_code, 302)
-        self.post(eq, f"/chamados/{numero}/atualizar", {"status": "resolvido", "prioridade": "alta"})
+        self.post(eq, f"/chamados/{numero}/atualizar", {"status": "resolvido", "prioridade": "alta",
+                                                       "contrato_id": str(self.ids["ct_beta"]),
+                                                       "responsavel_id": str(self.ids["tec"])})
 
         # 5) admin aprova -> saldo do banco cai
         antes = self.sql("SELECT horas_saldo FROM vw_saldo_banco_horas WHERE contrato_id = %s",
@@ -573,7 +575,7 @@ class TestEntrega1(Base):
         adm = self.cliente_http("contato@portosolucoes.com.br")
         self.assertEqual(adm.get("/equipe/acessos").status_code, 200)
         ana = self.ids["tec"]
-        dados = {f"p_{ana}_{r}": "1" for r in ("chamados", "horas", "emails", "relatorios")}  # libera relatórios
+        dados = {f"p_{ana}_{r}": "1" for r in ("chamados", "chamados_gerir", "horas", "emails", "relatorios", "conhecimento")}  # libera relatórios
         self.post(adm, "/equipe/acessos", dados)
         self.assertEqual(tec.get("/relatorios/apontamentos").status_code, 200)
         dados.pop(f"p_{ana}_chamados")  # bloqueia chamados
@@ -828,9 +830,10 @@ class TestEntrega3(Base):
     def chamado_beta(self, titulo):
         """Chamado no contrato 'Pacote 40h' (banco de horas) da Clínica Beta."""
         ct = self.sql("SELECT id FROM contratos WHERE descricao = 'Pacote 40h'")[0]["id"]
-        r = self.sql("""INSERT INTO chamados (cliente_id, solicitante_id, contrato_id, titulo, descricao, prioridade, origem)
-                        VALUES (%s, %s, %s, %s, 'x', 'media', 'portal') RETURNING id, numero""",
-                     [self.ids["beta"], self.ids["joao"], ct, titulo])[0]
+        r = self.sql("""INSERT INTO chamados (cliente_id, solicitante_id, contrato_id, titulo, descricao, prioridade, origem,
+                                              responsavel_id)
+                        VALUES (%s, %s, %s, %s, 'x', 'media', 'portal', %s) RETURNING id, numero""",
+                     [self.ids["beta"], self.ids["joao"], ct, titulo, self.ids["tec"]])[0]
         return ct, r["id"], r["numero"]
 
     def test_cronometro(self):
@@ -1194,3 +1197,340 @@ class TestEntrega4(Base):
         self.assertEqual(tec.get("/dashboard").status_code, 403)
         cli = self.cliente_http("joao@clinicabeta.com.br")
         self.assertIn('data-pasta="Relatórios"', cli.get("/portal/").get_data(as_text=True))
+
+
+class TestEntrega5(Base):
+    """Itens do contrato, validações, regras de atendimento, cronômetros concorrentes, e-mails de aprovação,
+    filtros e exportações."""
+
+    def tipo(self, nome):
+        return self.sql("SELECT id FROM tipos_servico WHERE nome = %s", [nome])[0]["id"]
+
+    def contrato(self, adm, **extra):
+        base = {"cliente_id": str(self.ids["alfa"]), "tipo": "banco_horas", "descricao": "Itens", "valor_hora": "150",
+                "data_inicio": "2026-01-01"}
+        base.update(extra)
+        return self.post(adm, "/contratos/novo", base, follow_redirects=True)
+
+    def test_contrato_validacoes_e_itens(self):
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        hd, dev = str(self.tipo("Help desk")), str(self.tipo("Desenvolvimento"))
+        casos = [({"data_fim": "2025-12-01", "horas_pacote": "10"}, "anterior à data de início"),
+                 ({"dia_vencimento": "32", "horas_pacote": "10"}, "de 1 a 31"),
+                 ({"mes_reajuste": "13", "horas_pacote": "10"}, "de 1 a 12"),
+                 ({"item_tipo": [hd, hd], "item_horas": ["5", "5"]}, "só pode aparecer uma vez"),
+                 ({"horas_pacote": "8", "item_tipo": [hd, dev], "item_horas": ["5", "5"]}, "passa das horas liberadas")]
+        for extra, msg in casos:
+            with self.subTest(msg=msg):
+                self.assertIn(msg, self.contrato(adm, descricao="Inválido", **extra).get_data(as_text=True))
+        self.assertFalse(self.sql("SELECT 1 FROM contratos WHERE descricao = 'Inválido'"))
+        # horas liberadas = soma dos itens
+        self.contrato(adm, descricao="Com itens", item_tipo=[hd, dev], item_horas=["10", "30"],
+                      item_valor=["", "220"], item_desc=["", "sprints"])
+        ct = self.sql("SELECT id, horas_pacote, tipo_servico_id FROM contratos WHERE descricao = 'Com itens'")[0]
+        self.assertEqual(float(ct["horas_pacote"]), 40)
+        self.assertEqual(ct["tipo_servico_id"], int(hd))
+        itens = self.sql("SELECT tipo_servico_id, horas, valor_hora FROM contrato_itens WHERE contrato_id = %s ORDER BY ordem",
+                         [ct["id"]])
+        self.assertEqual([(i["tipo_servico_id"], float(i["horas"])) for i in itens], [(int(hd), 10), (int(dev), 30)])
+        self.assertEqual(float(itens[1]["valor_hora"]), 220)
+        self.assertIn("sprints", adm.get(f"/contratos/{ct['id']}").get_data(as_text=True))
+        # apontamento com tipo fora do contrato é recusado
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        hoje = self.sql("SELECT current_date AS d")[0]["d"].isoformat()
+        r = self.post(tec, "/horas/lancar", {"contrato_id": str(ct["id"]), "data": hoje, "duracao": "1h",
+                                             "descricao": "infra", "tipo_servico_id": str(self.tipo("Infraestrutura"))},
+                      follow_redirects=True)
+        self.assertIn("não previsto no contrato", r.get_data(as_text=True))
+        self.post(tec, "/horas/lancar", {"contrato_id": str(ct["id"]), "data": hoje, "duracao": "1h",
+                                         "descricao": "ok dev", "tipo_servico_id": dev, "faturavel": "1"})
+        self.assertTrue(self.sql("SELECT 1 FROM apontamentos WHERE descricao = 'ok dev'"))
+
+    def test_mensal_fixo_saldo_do_mes(self):
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        self.contrato(adm, tipo="mensal_fixo", descricao="Mensal 10h", valor_mensal="1500", franquia_horas="10",
+                      horas_pacote="10")
+        ct = self.sql("SELECT id FROM contratos WHERE descricao = 'Mensal 10h'")[0]["id"]
+        self.sql("""INSERT INTO apontamentos (usuario_id, contrato_id, data, minutos, descricao, tipo_servico_id)
+                    VALUES (%s, %s, date_trunc('month', current_date)::date - 3, 540, 'mês passado', %s)""",
+                 [self.ids["tec"], ct, self.tipo("Help desk")])
+        s = self.sql("SELECT horas_saldo, periodo FROM vw_saldo_banco_horas WHERE contrato_id = %s", [ct])[0]
+        self.assertEqual((float(s["horas_saldo"]), s["periodo"]), (10, "mensal"))
+
+    def test_regras_de_atendimento(self):
+        # cliente Alfa: dois contratos válidos -> o chamado nasce sem contrato
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        self.contrato(adm, descricao="Segundo Alfa", horas_pacote="5")
+        maria = self.cliente_http("maria@alfalog.com.br")
+        r = self.post(maria, "/portal/chamados/novo", {"titulo": "Sem contrato", "descricao": "x", "prioridade": "media"})
+        num = int(re.search(r"/chamados/(\d+)", r.headers["Location"]).group(1))
+        cid = self.sql("SELECT id, contrato_id FROM chamados WHERE numero = %s", [num])[0]
+        self.assertIsNone(cid["contrato_id"])
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        html = tec.get(f"/chamados/{num}").get_data(as_text=True)
+        self.assertIn("Atendimento bloqueado", html)
+        self.post(tec, f"/chamados/{num}/responder", {"texto": "olá"})
+        self.post(tec, f"/chamados/{num}/cronometro/iniciar", {})
+        self.assertFalse(self.sql("SELECT 1 FROM chamado_interacoes WHERE chamado_id = %s", [cid["id"]]))
+        self.assertFalse(self.sql("SELECT 1 FROM cronometros WHERE chamado_id = %s", [cid["id"]]))
+        # sem permissão de gerir, não altera contrato/responsável/status/prioridade
+        self.sql("INSERT INTO permissoes (usuario_id, rotina, permitido) VALUES (%s, 'chamados_gerir', false)",
+                 [self.ids["tec"]])
+        self.assertEqual(self.post(tec, f"/chamados/{num}/atualizar", {"status": "resolvido"}).status_code, 403)
+        self.assertNotIn('id="form-atualizar"', tec.get(f"/chamados/{num}").get_data(as_text=True))
+        self.sql("DELETE FROM permissoes WHERE usuario_id = %s AND rotina = 'chamados_gerir'", [self.ids["tec"]])
+        # contrato sem saldo não é aceito
+        sem = self.sql("""INSERT INTO contratos (cliente_id, tipo, descricao, horas_pacote, valor_hora, data_inicio)
+                          VALUES (%s, 'banco_horas', 'Zerado', 1, 100, '2026-01-01') RETURNING id""", [self.ids["alfa"]])[0]["id"]
+        self.sql("""INSERT INTO apontamentos (usuario_id, contrato_id, data, minutos, descricao, tipo_servico_id)
+                    VALUES (%s, %s, current_date, 60, 'gastou', %s)""", [self.ids["tec"], sem, self.tipo("Help desk")])
+        r = self.post(tec, f"/chamados/{num}/atualizar", {"contrato_id": str(sem), "responsavel_id": str(self.ids["tec"]),
+                                                         "status": "em_atendimento", "prioridade": "media"},
+                      follow_redirects=True)
+        self.assertIn("sem saldo", r.get_data(as_text=True))
+        self.assertIsNone(self.sql("SELECT contrato_id FROM chamados WHERE id = %s", [cid["id"]])[0]["contrato_id"])
+        # contrato válido + responsável liberam o atendimento
+        bom = self.sql("SELECT id FROM contratos WHERE descricao = 'Segundo Alfa'")[0]["id"]
+        self.post(tec, f"/chamados/{num}/atualizar", {"contrato_id": str(bom), "responsavel_id": str(self.ids["tec"]),
+                                                     "status": "em_atendimento", "prioridade": "media"})
+        self.assertNotIn("Atendimento bloqueado", tec.get(f"/chamados/{num}").get_data(as_text=True))
+        self.post(tec, f"/chamados/{num}/responder", {"texto": "agora vai"})
+        self.assertTrue(self.sql("SELECT 1 FROM chamado_interacoes WHERE chamado_id = %s", [cid["id"]]))
+
+    def test_cronometros_concorrentes(self):
+        ct = self.sql("""INSERT INTO contratos (cliente_id, tipo, descricao, horas_pacote, valor_hora, data_inicio)
+                         VALUES (%s, 'banco_horas', 'Pool 2h', 2, 100, '2026-01-01') RETURNING id""",
+                      [self.ids["beta"]])[0]["id"]
+        nums = []
+        for t in ("Pool A", "Pool B"):
+            nums.append(self.sql("""INSERT INTO chamados (cliente_id, solicitante_id, contrato_id, responsavel_id, titulo,
+                                                          descricao, prioridade, origem)
+                                    VALUES (%s, %s, %s, %s, %s, 'x', 'media', 'portal') RETURNING id, numero""",
+                                 [self.ids["beta"], self.ids["joao"], ct, self.ids["tec"], t])[0])
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        self.post(adm, f"/chamados/{nums[1]['numero']}/cronometro/iniciar", {})
+        self.sql("UPDATE cronometros SET rodando_desde = now() - interval '30 minutes' WHERE chamado_id = %s",
+                 [nums[1]["id"]])
+        e = tec.get(f"/chamados/{nums[0]['numero']}/cronometro/estado").get_json()
+        self.assertEqual(e["outros_rodando"], 1)
+        self.assertTrue(5300 <= e["limite"] <= 5400)  # 2h − 30 min do outro recurso
+        # o outro estoura o saldo: este fica sem limite disponível
+        self.sql("UPDATE cronometros SET rodando_desde = now() - interval '3 hours' WHERE chamado_id = %s",
+                 [nums[1]["id"]])
+        self.assertEqual(tec.get(f"/chamados/{nums[0]['numero']}/cronometro/estado").get_json()["limite"], 0)
+        self.post(tec, f"/chamados/{nums[0]['numero']}/cronometro/iniciar", {})
+        self.assertFalse(self.sql("SELECT 1 FROM cronometros WHERE chamado_id = %s", [nums[0]["id"]]))
+
+    def test_emails_de_aprovacao(self):
+        cid = self.sql("SELECT id FROM chamados ORDER BY id LIMIT 1")[0]["id"]
+        ids = [self.sql("""INSERT INTO apontamentos (usuario_id, chamado_id, data, minutos, descricao, tipo_servico_id)
+                           VALUES (%s, %s, current_date, 45, %s, %s) RETURNING id""",
+                        [self.ids["tec"], cid, f"trabalho {i}", self.tipo("Help desk")])[0]["id"] for i in range(2)]
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        self.post(adm, "/admin/aprovacao", {"ids": [str(i) for i in ids], "acao": "rejeitado", "motivo": "Sem detalhe"})
+        emails = self.sql("SELECT para, assunto, corpo FROM emails_saida WHERE evento = 'aprovacao_horas' ORDER BY id")
+        para = {e["para"]: e for e in emails}
+        self.assertIn("ana@portosolucoes.com.br", para)
+        self.assertIn("contato@portosolucoes.com.br", para)
+        corpo = para["ana@portosolucoes.com.br"]["corpo"]
+        for trecho in ("rejeitados", "trabalho 0", "trabalho 1", "Sem detalhe", "Total: 1h30"):
+            self.assertIn(trecho, corpo)
+
+    def test_filtros_e_exportacoes(self):
+        cid, num = [self.sql("SELECT id, numero FROM chamados ORDER BY id LIMIT 1")[0][k] for k in ("id", "numero")]
+        self.sql("""INSERT INTO apontamentos (usuario_id, chamado_id, data, minutos, descricao, tipo_servico_id)
+                    VALUES (%s, %s, current_date, 50, 'Troca do switch do andar', %s)""",
+                 [self.ids["tec"], cid, self.tipo("Help desk")])
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        html = tec.get("/horas?descricao=switch").get_data(as_text=True)
+        self.assertIn("Troca do switch", html)
+        self.assertNotIn("Troca do switch", tec.get("/horas?descricao=impressora").get_data(as_text=True))
+        self.assertIn("Troca do switch", tec.get(f"/horas?chamado={num}").get_data(as_text=True))
+        self.assertIn("Troca do switch", tec.get("/horas?duracao=0:50").get_data(as_text=True))
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        self.assertIn("Troca do switch", adm.get("/admin/apontamentos?descricao=swit").get_data(as_text=True))
+        self.assertIn("Troca do switch", adm.get(f"/admin/aprovacao?chamado={num}").get_data(as_text=True))
+        sol = self.sql("SELECT solicitante_id FROM chamados WHERE id = %s", [cid])[0]["solicitante_id"]
+        self.assertIn("Troca do switch", adm.get(f"/admin/aprovacao?solicitante={sol}").get_data(as_text=True))
+        self.assertNotIn("Troca do switch", adm.get("/admin/aprovacao?status_chamado=fechado").get_data(as_text=True))
+        for c, url in [(tec, "/horas"), (adm, "/admin/apontamentos"), (adm, "/admin/aprovacao"), (adm, "/admin/saldos"),
+                       (adm, f"/admin/saldos?contrato={self.ids['ct_beta']}")]:
+            with self.subTest(url=url):
+                sep = "&" if "?" in url else "?"
+                self.assertTrue(c.get(url + sep + "formato=pdf").data.startswith(b"%PDF"))
+                r = c.get(url + sep + "formato=xlsx")
+                self.assertEqual(r.mimetype, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    def test_tela_do_chamado(self):
+        num = self.sql("SELECT numero FROM chamados WHERE contrato_id = %s ORDER BY id LIMIT 1", [self.ids["ct_beta"]])[0]["numero"]
+        self.sql("UPDATE chamados SET responsavel_id = %s WHERE numero = %s", [self.ids["tec"], num])
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        html = tec.get(f"/chamados/{num}").get_data(as_text=True)
+        # cronômetro acima de Detalhes, Atualizar acima de Agenda; detalhes mostram status/prioridade/responsável
+        self.assertLess(html.index('id="cronometro"'), html.index("<h3>Detalhes</h3>"))
+        self.assertLess(html.index('id="form-atualizar"'), html.index('id="agenda"'))
+        for k in ("status", "prioridade", "responsavel_id", "contrato_id"):
+            self.assertIn(f'data-espelho="{k}"', html)
+        self.assertIn("Ana Técnica", html.split('data-espelho="responsavel_id"')[1][:40])
+
+
+class TestVersao16(Base):
+    """Visibilidade por responsável, avisos de saldo, horas extras, respostas prontas, base de conhecimento e
+    fechamento de período."""
+
+    def tipo(self):
+        return self.sql("SELECT id FROM tipos_servico WHERE nome = 'Help desk'")[0]["id"]
+
+    def chamado(self, titulo, resp=None, contrato=None):
+        return self.sql("""INSERT INTO chamados (cliente_id, solicitante_id, contrato_id, responsavel_id, titulo, descricao,
+                                                 prioridade, origem)
+                           VALUES (%s, %s, %s, %s, %s, 'x', 'media', 'portal') RETURNING id, numero""",
+                        [self.ids["beta"], self.ids["joao"], contrato or self.ids["ct_beta"], resp, titulo])[0]
+
+    def test_versao_no_menu(self):
+        from app import VERSAO
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        self.assertIn(f"SisPorto v{VERSAO}", adm.get("/painel").get_data(as_text=True))
+
+    def test_visibilidade_por_responsavel(self):
+        livre = self.chamado("Visível a todos")
+        meu = self.chamado("Da Ana", resp=self.ids["tec"])
+        outro = self.chamado("Do admin", resp=self.ids["adm"])
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        lista = tec.get("/chamados?situacao=todos").get_data(as_text=True)
+        self.assertIn("Visível a todos", lista)
+        self.assertIn("Da Ana", lista)
+        self.assertNotIn("Do admin", lista)
+        self.assertEqual(tec.get(f"/chamados/{livre['numero']}").status_code, 200)
+        self.assertEqual(tec.get(f"/chamados/{meu['numero']}").status_code, 200)
+        self.assertEqual(tec.get(f"/chamados/{outro['numero']}").status_code, 403)
+        self.assertEqual(self.post(tec, f"/chamados/{outro['numero']}/responder", {"texto": "x"}).status_code, 403)
+        self.assertEqual(tec.get(f"/chamados/{outro['numero']}/cronometro/estado").status_code, 403)
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        self.assertIn("Do admin", adm.get("/chamados?situacao=todos").get_data(as_text=True))
+        self.assertIn("Da Ana", adm.get("/chamados?situacao=todos").get_data(as_text=True))
+
+    def test_avisos_de_saldo(self):
+        ct = self.sql("""INSERT INTO contratos (cliente_id, tipo, descricao, horas_pacote, valor_hora, data_inicio)
+                         VALUES (%s, 'banco_horas', 'Aviso 10h', 10, 100, '2026-01-01') RETURNING id""",
+                      [self.ids["beta"]])[0]["id"]
+        self.sql("UPDATE usuarios SET recebe_alerta_saldo = true WHERE id = %s", [self.ids["joao"]])
+        c = self.chamado("Consumo", resp=self.ids["tec"], contrato=ct)
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        hoje = self.sql("SELECT current_date AS d")[0]["d"].isoformat()
+
+        def lancar(d):
+            self.post(tec, f"/chamados/{c['numero']}/horas", {"data": hoje, "duracao": d, "descricao": "trabalho",
+                                                              "tipo_servico_id": str(self.tipo()), "faturavel": "1"})
+
+        def avisos():
+            return self.sql("""SELECT para, assunto FROM emails_saida WHERE evento = 'alerta_saldo'
+                                AND assunto LIKE %s ORDER BY id""", ["%Aviso 10h%"])
+        lancar("7h")
+        self.assertEqual(avisos(), [])
+        lancar("1h30")  # 85%
+        a = avisos()
+        self.assertTrue(any(x["para"] == "joao@clinicabeta.com.br" and "80%" in x["assunto"] for x in a))
+        self.assertTrue(any("@portosolucoes" in x["para"] for x in a))
+        n = len(a)
+        lancar("0:10")  # continua em 80%: não repete
+        self.assertEqual(len(avisos()), n)
+        self.post(self.cliente_http("contato@portosolucoes.com.br"), f"/chamados/{c['numero']}/horas",
+                  {"data": hoje, "duracao": "1:20", "descricao": "fim", "tipo_servico_id": str(self.tipo()), "faturavel": "1"})
+        self.assertTrue(any("100%" in x["assunto"] for x in avisos()))
+
+    def test_horas_extras(self):
+        ct = self.sql("""INSERT INTO contratos (cliente_id, tipo, descricao, horas_pacote, valor_hora, data_inicio)
+                         VALUES (%s, 'banco_horas', 'Extras 2h', 2, 150, '2026-01-01') RETURNING id""",
+                      [self.ids["beta"]])[0]["id"]
+        c = self.chamado("Precisa de mais", resp=self.ids["tec"], contrato=ct)
+        self.sql("""INSERT INTO apontamentos (usuario_id, chamado_id, data, minutos, descricao, tipo_servico_id)
+                    VALUES (%s, %s, current_date, 120, 'tudo', %s)""", [self.ids["tec"], c["id"], self.tipo()])
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        self.assertIn("solicitar horas extras", tec.get(f"/chamados/{c['numero']}").get_data(as_text=True).lower())
+        r = self.post(tec, "/horas-extras", {"chamado": str(c["numero"]), "origem": "chamado", "horas": "5",
+                                             "justificativa": "Migração exige mais 5 horas."})
+        self.assertIn(f"/chamados/{c['numero']}", r.headers["Location"])
+        e = self.sql("SELECT * FROM horas_extras WHERE contrato_id = %s", [ct])[0]
+        self.assertEqual((float(e["horas"]), e["status"], float(e["valor_hora"])), (5, "pendente", 150))
+        self.assertTrue(self.sql("SELECT 1 FROM emails_saida WHERE evento = 'horas_extras' AND para = 'joao@clinicabeta.com.br'"))
+        # outro cliente não vê; usuário sem marca de aprovador não aprova quando há aprovador marcado
+        maria = self.cliente_http("maria@alfalog.com.br")
+        self.assertNotIn("Migração", maria.get("/portal/horas-extras").get_data(as_text=True))
+        self.assertEqual(self.post(maria, f"/portal/horas-extras/{e['id']}", {"acao": "aprovado"}).status_code, 404)
+        joao = self.cliente_http("joao@clinicabeta.com.br")
+        self.assertIn("Migração exige", joao.get("/portal/horas-extras").get_data(as_text=True))
+        self.post(joao, f"/portal/horas-extras/{e['id']}", {"acao": "recusado"})  # recusa sem motivo: bloqueia
+        self.assertEqual(self.sql("SELECT status FROM horas_extras WHERE id = %s", [e["id"]])[0]["status"], "pendente")
+        self.post(joao, f"/portal/horas-extras/{e['id']}", {"acao": "aprovado", "resposta": "ok"})
+        self.assertEqual(self.sql("SELECT status FROM horas_extras WHERE id = %s", [e["id"]])[0]["status"], "aprovado")
+        s = self.sql("SELECT horas_saldo, horas_extras, horas_liberadas FROM vw_saldo_banco_horas WHERE contrato_id = %s",
+                     [ct])[0]
+        self.assertEqual((float(s["horas_saldo"]), float(s["horas_extras"]), float(s["horas_liberadas"])), (5, 5, 7))
+        self.assertTrue(self.sql("SELECT 1 FROM emails_saida WHERE evento = 'horas_extras' AND para = 'ana@portosolucoes.com.br'"))
+        self.assertNotIn("Atendimento bloqueado", tec.get(f"/chamados/{c['numero']}").get_data(as_text=True))
+
+    def test_respostas_prontas_e_conhecimento(self):
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        self.post(adm, "/config/respostas-prontas", {"titulo": "Acesso remoto",
+                                                    "texto": "Olá, {solicitante}. No chamado #{numero} precisamos de acesso."})
+        c = self.chamado("Impressora não imprime nada", resp=self.ids["tec"])
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        self.post(tec, "/conhecimento/novo", {"titulo": "Impressora não imprime: limpar fila do spooler",
+                                              "conteudo": "Abra services.msc e reinicie o Spooler.", "publico": "1",
+                                              "categoria": "Impressoras", "palavras": "spooler fila"})
+        self.post(tec, "/conhecimento/novo", {"titulo": "Senha do roteador da Porto", "conteudo": "interno", })
+        html = tec.get(f"/chamados/{c['numero']}").get_data(as_text=True)
+        self.assertIn(f"No chamado #{c['numero']} precisamos de acesso", html)
+        self.assertIn("João Lima", html.split("Acesso remoto")[0][-400:] + html)  # {solicitante} preenchido
+        self.assertIn("limpar fila do spooler", html)  # artigo relacionado
+        joao = self.cliente_http("joao@clinicabeta.com.br")
+        sug = joao.get("/conhecimento/buscar.json?q=impressora não imprime").get_json()
+        self.assertEqual(len(sug), 1)
+        self.assertEqual(joao.get("/conhecimento/buscar.json?q=senha roteador").get_json(), [])
+        ajuda = joao.get("/portal/ajuda").get_data(as_text=True)
+        self.assertIn("spooler", ajuda)
+        self.assertNotIn("roteador", ajuda)
+        interno = self.sql("SELECT id FROM artigos WHERE titulo LIKE 'Senha%%'")[0]["id"]
+        self.assertEqual(joao.get(f"/conhecimento/{interno}").status_code, 404)
+        pub = self.sql("SELECT id FROM artigos WHERE publico")[0]["id"]
+        self.assertEqual(joao.get(f"/conhecimento/{pub}").status_code, 200)
+        self.post(joao, f"/conhecimento/{pub}/util", {"util": "1"})
+        self.assertEqual(self.sql("SELECT util_sim, visualizacoes FROM artigos WHERE id = %s", [pub])[0]["util_sim"], 1)
+        self.assertEqual(self.cliente_http("joao@clinicabeta.com.br").get("/conhecimento").status_code, 403)
+
+    def test_fechamento_de_periodo(self):
+        cid = self.sql("SELECT id FROM chamados ORDER BY id LIMIT 1")[0]["id"]
+        ap = self.sql("""INSERT INTO apontamentos (usuario_id, chamado_id, data, minutos, descricao, tipo_servico_id)
+                         VALUES (%s, %s, '2026-03-10', 60, 'março', %s) RETURNING id""",
+                      [self.ids["tec"], cid, self.tipo()])[0]["id"]
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        r = self.post(adm, "/admin/fechamento", {"acao": "fechar", "de": "2026-03-01", "ate": "2026-03-31"},
+                      follow_redirects=True)
+        self.assertIn("pendente", r.get_data(as_text=True))
+        self.assertFalse(self.sql("SELECT 1 FROM periodos_fechados"))
+        self.post(adm, "/admin/aprovacao", {"ids": str(ap), "acao": "aprovado"})
+        self.post(adm, "/admin/fechamento", {"acao": "fechar", "de": "2026-03-01", "ate": "2026-03-31"})
+        self.assertTrue(self.sql("SELECT 1 FROM periodos_fechados"))
+        # banco recusa qualquer alteração
+        with self.assertRaises(Exception):
+            self.sql("UPDATE apontamentos SET minutos = 30 WHERE id = %s", [ap])
+        # telas recusam com aviso
+        tec = self.cliente_http("ana@portosolucoes.com.br")
+        r = self.post(tec, "/horas/lancar", {"contrato_id": str(self.ids["ct_beta"]), "data": "2026-03-15",
+                                             "duracao": "1h", "descricao": "atrasado", "tipo_servico_id": str(self.tipo())},
+                      follow_redirects=True)
+        self.assertIn("está fechado", r.get_data(as_text=True))
+        r = self.post(adm, f"/admin/apontamentos/{ap}", {"usuario_id": str(self.ids["tec"]), "chamado": "",
+                                                        "contrato_id": str(self.ids["ct_beta"]), "status": "aprovado",
+                                                        "data": "2026-03-10", "duracao": "2h", "descricao": "x",
+                                                        "tipo_servico_id": str(self.tipo())}, follow_redirects=True)
+        self.assertIn("período fechado", r.get_data(as_text=True))
+        self.assertEqual(self.sql("SELECT minutos FROM apontamentos WHERE id = %s", [ap])[0]["minutos"], 60)
+        # reabrir libera
+        pid = self.sql("SELECT id FROM periodos_fechados")[0]["id"]
+        self.post(adm, "/admin/fechamento", {"acao": "reabrir", "id": str(pid)})
+        self.sql("UPDATE apontamentos SET minutos = 30 WHERE id = %s", [ap])
+        self.assertEqual(self.sql("SELECT minutos FROM apontamentos WHERE id = %s", [ap])[0]["minutos"], 30)
+        self.assertEqual(self.cliente_http("ana@portosolucoes.com.br").get("/admin/fechamento").status_code, 403)

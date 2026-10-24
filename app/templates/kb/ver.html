@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}{{ a.titulo }}{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><div class="muted small"><a href="{{ url_for('kb.ajuda') if eh_cliente else url_for('kb.lista') }}">{{ 'Ajuda' if eh_cliente else 'Base de conhecimento' }}</a>{% if a.categoria %} · {{ a.categoria }}{% endif %}</div>
+<h1>{{ a.titulo }}</h1>{% if not eh_cliente %}<div class="muted small">{{ 'Público' if a.publico else 'Só equipe' }} · {{ a.visualizacoes }} leituras · 👍 {{ a.util_sim }} · 👎 {{ a.util_nao }}{% if a.autor %} · {{ a.autor }}{% endif %}</div>{% endif %}</div>
+{% if not eh_cliente and pode('conhecimento') %}<a class="btn sec" href="{{ url_for('kb.editar', aid=a.id) }}">Editar</a>{% endif %}</div>
+<div class="card artigo"><div class="txt" style="white-space:pre-wrap">{{ a.conteudo|urlize(target='_blank') }}</div></div>
+<form method="post" action="{{ url_for('kb.util', aid=a.id) }}" class="card linha">{{ m.csrf_input() }}<span>Este artigo ajudou?</span>
+<button class="btn sec peq" name="util" value="1">👍 Sim</button> <button class="btn sec peq" name="util" value="0">👎 Não</button>
+{% if eh_cliente %}<a class="btn peq" href="{{ url_for('portal.chamado_novo') }}" style="margin-left:auto">Ainda preciso de ajuda: abrir chamado</a>{% endif %}</form>
+{% endblock %}

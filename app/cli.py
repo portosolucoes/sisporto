@@ -27,9 +27,16 @@ def migracoes():
 
 
 def _sql_statements(texto: str):
-    """Divide um arquivo SQL em comandos, respeitando blocos $$...$$ e comentários."""
-    cmds, atual, em_dolar, i = [], [], False, 0
+    """Divide um arquivo SQL em comandos, respeitando textos entre aspas, blocos $$...$$ e comentários."""
+    cmds, atual, em_dolar, em_aspas, i = [], [], False, False, 0
     while i < len(texto):
+        if not em_dolar and texto[i] == "'":  # texto entre aspas simples ('' é aspa escapada)
+            em_aspas = not em_aspas
+            atual.append("'"); i += 1
+            continue
+        if em_aspas:
+            atual.append(texto[i]); i += 1
+            continue
         if not em_dolar and texto.startswith("--", i):
             fim = texto.find("\n", i)
             i = len(texto) if fim == -1 else fim

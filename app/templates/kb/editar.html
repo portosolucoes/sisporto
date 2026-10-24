@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}{{ 'Editar' if a.id else 'Novo' }} artigo{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><div class="muted small"><a href="{{ url_for('kb.lista') }}">Base de conhecimento</a></div><h1>{{ 'Editar artigo' if a.id else 'Novo artigo' }}</h1></div></div>
+<form method="post" class="card" style="max-width:900px">{{ m.csrf_input() }}
+  <div class="campo"><label>Título *</label><input type="text" name="titulo" value="{{ a.titulo or '' }}" required placeholder="Ex.: Impressora não imprime – como limpar a fila"></div>
+  <div class="grid g2"><div class="campo"><label>Categoria</label><input type="text" name="categoria" value="{{ a.categoria or '' }}" list="categorias" placeholder="Impressoras, E-mail, Rede…"><datalist id="categorias">{% for c in categorias %}<option value="{{ c }}">{% endfor %}</datalist></div>
+  <div class="campo"><label>Palavras-chave</label><input type="text" name="palavras" value="{{ a.palavras or '' }}" placeholder="spooler, fila, impressão"></div></div>
+  <div class="campo"><label>Conteúdo *</label><textarea name="conteudo" rows="14" required placeholder="Sintoma, causa e passo a passo da solução.">{{ a.conteudo or '' }}</textarea></div>
+  <label class="check"><input type="checkbox" name="publico" value="1" {{ 'checked' if a.publico }}> Público: clientes veem na Ajuda do portal</label>
+  {% if a.id %}<label class="check"><input type="checkbox" name="ativo" value="1" {{ 'checked' if a.ativo }}> Ativo</label><input type="hidden" name="ativo_enviado" value="1">{% endif %}
+  <div style="margin-top:12px"><button class="btn">Salvar</button>{% if a.id %} <button class="btn perigo" name="acao" value="excluir" formnovalidate onclick="return confirm('Excluir o artigo?')">Excluir</button>{% endif %}</div>
+</form>
+{% endblock %}

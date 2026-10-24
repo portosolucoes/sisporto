@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}Horas extras{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Horas extras</h1><div class="muted">Pedidos da Porto Soluções para horas além do contratado. Aprovadas, entram no saldo na hora.</div></div></div>
+{% if not pode_aprovar %}<div class="card muted">Você pode acompanhar os pedidos; a aprovação é feita pelos responsáveis indicados pela sua empresa.</div>{% endif %}
+{% for e in pedidos %}
+<div class="card">
+  <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><b>{{ e.horas|horas_dec }} extras</b> · {{ e.contrato }}{% if e.numero %} · <a href="{{ url_for('portal.chamado', numero=e.numero) }}">chamado #{{ e.numero }}</a> {{ e.titulo }}{% endif %}
+  <div class="muted small">Pedido por {{ e.solicitante }} em {{ e.solicitado_em|data_hora }}{% if e.valor_hora %} · {{ e.valor_hora|moeda }}/hora · total estimado {{ (e.valor_hora * e.horas)|moeda }}{% endif %}</div></div>
+  <div>{% if e.status == 'pendente' %}<span class="selo pendente">Aguardando sua aprovação</span>{% elif e.status == 'aprovado' %}<span class="selo ok">Aprovado</span>{% else %}<span class="selo bad">Recusado</span>{% endif %}</div></div>
+  <p style="margin:10px 0 0">{{ e.justificativa }}</p>
+  {% if e.respondente %}<p class="muted small">{{ 'Aprovado' if e.status == 'aprovado' else 'Recusado' }} por {{ e.respondente }} em {{ e.respondido_em|data_hora }}{% if e.resposta %}: “{{ e.resposta }}”{% endif %}</p>{% endif %}
+  {% if e.status == 'pendente' and pode_aprovar %}
+  <form method="post" action="{{ url_for('extras.portal_responder', pid=e.id) }}" class="linha" style="margin-top:12px">{{ m.csrf_input() }}
+    <div style="flex:1;min-width:220px"><input type="text" name="resposta" placeholder="Comentário (obrigatório para recusar)" aria-label="Comentário"></div>
+    <button class="btn" name="acao" value="aprovado">Aprovar</button> <button class="btn perigo" name="acao" value="recusado">Recusar</button>
+  </form>{% endif %}
+</div>
+{% else %}<div class="card vazio">Nenhum pedido de horas extras.</div>{% endfor %}
+{% endblock %}

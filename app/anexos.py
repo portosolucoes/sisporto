@@ -71,6 +71,11 @@ def baixar(anexo_id):
             abort(404)
     elif not pode("chamados"):
         abort(403)
+    else:
+        from .chamados import visivel
+        resp = db().val("SELECT responsavel_id FROM chamados WHERE id = %s", [a["chamado_id"]])
+        if not visivel({"responsavel_id": resp}):
+            abort(403)
     if a["arquivo"] is None:
         abort(404)
     r = Response(bytes(a["arquivo"]), mimetype="application/octet-stream")

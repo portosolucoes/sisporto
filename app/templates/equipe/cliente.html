@@ -27,7 +27,7 @@
 <div class="grid g2">
   <div class="card"><h2>Usuários do cliente (portal)</h2>
     <div class="tabela" style="margin-bottom:12px">{% if contatos %}<table><tbody>{% for u in contatos %}<tr>
-      <td><b>{{ u.codigo }}</b> · <a href="{{ url_for('equipe.usuario_editar', usuario_id=u.id) }}">{{ u.nome }}</a>{% if u.recebe_nps %} <span class="selo">NPS</span>{% endif %}<div class="muted small">{{ u.email }}{% if u.cargo %} · {{ u.cargo }}{% endif %}</div></td>
+      <td><b>{{ u.codigo }}</b> · <a href="{{ url_for('equipe.usuario_editar', usuario_id=u.id) }}">{{ u.nome }}</a>{% if u.recebe_nps %} <span class="selo">NPS</span>{% endif %}{% if u.recebe_alerta_saldo %} <span class="selo">Saldo</span>{% endif %}{% if u.aprova_horas_extras %} <span class="selo ok">Aprova extras</span>{% endif %}<div class="muted small">{{ u.email }}{% if u.cargo %} · {{ u.cargo }}{% endif %}</div></td>
       <td>{% if u.ativo %}<span class="selo ok">Ativo</span>{% else %}<span class="selo">Inativo</span>{% endif %}</td>
       <td style="white-space:nowrap">
         <form method="post" action="{{ url_for('equipe.usuario_atualizar', usuario_id=u.id) }}" style="display:inline">{{ m.csrf_input() }}<input type="hidden" name="acao" value="senha"><button class="btn sec peq">Nova senha</button></form>
@@ -38,6 +38,8 @@
       <div style="flex:1;min-width:180px"><label>E-mail</label><input type="email" name="email" required></div>
       <div style="flex:1;min-width:120px"><label>Cargo</label><input type="text" name="cargo"></div>
       <label class="check"><input type="checkbox" name="recebe_nps" value="1"> Recebe NPS</label>
+      <label class="check"><input type="checkbox" name="recebe_alerta_saldo" value="1"> Avisos de saldo</label>
+      <label class="check"><input type="checkbox" name="aprova_horas_extras" value="1"> Aprova horas extras</label>
       <button class="btn">Criar usuário</button></form>
   </div>
   <div class="card"><h2>Horas por mês</h2>

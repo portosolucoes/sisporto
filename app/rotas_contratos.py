@@ -7,7 +7,7 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 from .acessos import requer
 from .db import IntegrityError, db
-from .rotas_equipe import CAMPOS_CONTRATO, _dados_contrato, _int, _politicas, _tipos_servico
+from .rotas_equipe import CAMPOS_CONTRATO, _dados_contrato, _int, _itens_form, _politicas, _tipos_servico, salvar_itens
 from .util import TZ
 
 bp = Blueprint("contratos", __name__)
@@ -64,6 +64,7 @@ def novo():
             novo_id = db().val(f"""INSERT INTO contratos (cliente_id, {', '.join(CAMPOS_CONTRATO)})
                                    VALUES (%s, {', '.join(['%s'] * len(CAMPOS_CONTRATO))}) RETURNING id""",
                                [cid] + [v[k] for k in CAMPOS_CONTRATO])
+            salvar_itens(novo_id, v["itens"])
             flash("Contrato incluído.", "ok")
             return redirect(url_for("contratos.lista", cliente=cid) + f"#ct{novo_id}")
         except ValueError as e:
@@ -73,4 +74,5 @@ def novo():
             flash("Dados do contrato inconsistentes. Confira os valores.", "erro")
     return render_template("equipe/contrato_form.html", cliente=None, clientes=clientes, ct=request.form, novo=True,
                            politicas=_politicas(), tipos=_tipos_servico(),
-                           voltar=url_for("contratos.lista"), cliente_pre=_int(request.args.get("cliente")))
+                           voltar=url_for("contratos.lista"), cliente_pre=_int(request.args.get("cliente")),
+                           itens=_itens_form(request.form))

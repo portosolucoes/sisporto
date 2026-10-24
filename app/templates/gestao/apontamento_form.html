@@ -18,6 +18,7 @@
     <div><label>Duração</label><input type="text" name="duracao" value="{{ a.duracao if a.duracao is defined else dur(a.minutos) }}" placeholder="1:30" required></div>
     <div><label>Tipo de serviço</label><select name="tipo_servico_id" required>{% for t in tipos %}<option value="{{ t.id }}" {{ 'selected' if a.tipo_servico_id|string == t.id|string }}>{{ t.nome }}</option>{% endfor %}</select></div>
     <div><label class="check" style="margin-top:28px"><input type="checkbox" name="faturavel" value="1" {{ 'checked' if a.faturavel }}> Faturável</label></div>
+    {% if admin %}<div style="grid-column:1/-1"><label>Motivo da rejeição</label><input type="text" name="motivo" value="{{ a.motivo_rejeicao or a.motivo or '' }}" placeholder="Obrigatório só se o status for Rejeitado (o recurso recebe por e-mail)"></div>{% endif %}
     <div style="grid-column:1/-1"><label>O que foi feito</label><textarea name="descricao" rows="3" required>{{ a.descricao or '' }}</textarea></div>
   </div>
   <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap"><button class="btn">Salvar</button>

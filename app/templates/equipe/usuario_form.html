@@ -17,6 +17,8 @@
   </div>
   {% if u.perfil == 'cliente' %}
   <div class="campo"><label class="check"><input type="checkbox" name="recebe_nps" value="1" {{ 'checked' if u.recebe_nps }}> Recebe a pesquisa de satisfação (NPS) mensal</label></div>
+  <div class="campo"><label class="check"><input type="checkbox" name="recebe_alerta_saldo" value="1" {{ 'checked' if u.recebe_alerta_saldo }}> Recebe os avisos de saldo de horas (80% e 100%)</label></div>
+  <div class="campo"><label class="check"><input type="checkbox" name="aprova_horas_extras" value="1" {{ 'checked' if u.aprova_horas_extras }}> Pode aprovar horas extras no portal</label></div>
   {% endif %}
   <div class="campo"><label>Observações</label><textarea name="observacoes" style="min-height:70px">{{ u.observacoes or '' }}</textarea></div>
   {% if acessos is not none %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% import "_macros.html" as m with context %}
+{% block titulo %}Horas extras{% endblock %}
+{% block conteudo %}
+<div class="topo"><div><h1>Horas extras</h1><div class="muted">Pedidos de horas além do contratado. O cliente aprova pelo portal; aprovadas somam ao saldo (no mensal fixo, só no mês).</div></div></div>
+<details class="card" {{ 'open' if not pedidos }}><summary><b>+ Solicitar horas extras ao cliente</b></summary>
+<form method="post" class="grid g2" style="margin-top:12px">{{ m.csrf_input() }}
+  <div class="campo"><label>Contrato *</label><select name="contrato_id" required><option value="">Escolha…</option>{% for ct in contratos %}<option value="{{ ct.id }}">{{ ct.cliente }} – {{ ct.descricao }} (saldo {{ ct.horas_saldo|horas_dec }}{% if ct.pct_consumido %}, {{ ct.pct_consumido }}%{% endif %})</option>{% endfor %}</select></div>
+  <div class="grid g3" style="gap:10px"><div class="campo"><label>Horas *</label><input type="text" name="horas" required inputmode="decimal" placeholder="10"></div>
+  <div class="campo"><label>Valor hora (R$)</label><input type="text" name="valor_hora" inputmode="decimal" placeholder="do contrato"></div>
+  <div class="campo"><label>Chamado nº</label><input type="text" name="chamado" inputmode="numeric" placeholder="opcional"></div></div>
+  <div class="campo" style="grid-column:1/-1"><label>Justificativa para o cliente *</label><textarea name="justificativa" required rows="2" placeholder="Ex.: migração do servidor exige mais 10h além do pacote do mês."></textarea></div>
+  <div><button class="btn">Enviar ao cliente</button></div>
+</form></details>
+<form method="get" class="card linha filtros">
+  <div><label>Situação</label><select name="status"><option value="">Todas</option>{% for s, n in [('pendente','Aguardando cliente'),('aprovado','Aprovadas'),('recusado','Recusadas'),('cancelado','Canceladas')] %}<option value="{{ s }}" {{ 'selected' if f.status == s }}>{{ n }}</option>{% endfor %}</select></div>
+  <div><label>Cliente</label><select name="cliente"><option value="">Todos</option>{% for c in clientes %}<option value="{{ c.id }}" {{ 'selected' if f.cliente == c.id }}>{{ c.nome }}</option>{% endfor %}</select></div>
+  <button class="btn sec">Filtrar</button>
+</form>
+<div class="tabela">{% if pedidos %}<table><thead><tr><th>Pedido em</th><th>Cliente / contrato</th><th>Chamado</th><th class="num">Horas</th><th class="num">Valor hora</th><th>Justificativa</th><th>Situação</th><th></th></tr></thead><tbody>
+{% for e in pedidos %}<tr><td class="small">{{ e.solicitado_em|data_hora }}<div class="muted">{{ e.solicitante }}</div></td><td>{{ e.cliente }}<div class="muted small">{{ e.contrato }}</div></td>
+<td>{% if e.numero %}<a href="{{ url_for('equipe.chamado', numero=e.numero) }}">#{{ e.numero }}</a>{% else %}—{% endif %}</td>
+<td class="num">{{ e.horas|horas_dec }}</td><td class="num">{{ e.valor_hora|moeda if e.valor_hora is not none else '—' }}</td><td class="small">{{ e.justificativa }}</td>
+<td>{% if e.status == 'pendente' %}<span class="selo pendente">Aguardando cliente</span>{% elif e.status == 'aprovado' %}<span class="selo ok">Aprovado</span>{% elif e.status == 'recusado' %}<span class="selo bad">Recusado</span>{% else %}<span class="selo">Cancelado</span>{% endif %}
+{% if e.respondente %}<div class="muted small">{{ e.respondente }} · {{ e.respondido_em|data_hora }}</div>{% endif %}{% if e.resposta %}<div class="small">“{{ e.resposta }}”</div>{% endif %}</td>
+<td>{% if e.status == 'pendente' %}<form method="post" action="{{ url_for('extras.cancelar', pid=e.id) }}">{{ m.csrf_input() }}<button class="btn sec peq">Cancelar</button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="vazio">Nenhum pedido.</div>{% endif %}</div>
+{% endblock %}

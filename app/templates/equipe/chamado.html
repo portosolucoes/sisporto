@@ -7,52 +7,38 @@
   <div>{{ m.selo(c.status, 'status') }} {{ m.selo(c.prioridade, 'prioridade') }} {{ m.selo(c.situacao_sla, 'sla') }}
     {% if c.resposta_atrasada %}<span class="selo bad">1ª resposta atrasada</span>{% endif %}</div></div>
 </div>
+{% if bloqueio %}<div class="aviso erro" role="alert" style="margin-bottom:14px"><b>Atendimento bloqueado:</b> {{ bloqueio }}{% if gerir %} Use a caixa <a href="#form-atualizar">Atualizar</a>.{% endif %}</div>{% endif %}
 <div class="grid g-2-1">
   <div>
     <div class="card"><h3>Descrição</h3><div class="txt" style="white-space:pre-wrap">{{ c.descricao }}</div>{{ m.lista_anexos(anexos) }}</div>
     <div class="card"><h2>Conversa</h2>{{ m.linha_do_tempo(tempo) }}
       <form method="post" action="{{ url_for('equipe.chamado_responder', numero=c.numero) }}" enctype="multipart/form-data">
         {{ m.csrf_input() }}
-        <div class="campo"><label>Responder</label><textarea name="texto" required placeholder="Mensagem para o cliente (ou nota interna)"></textarea></div>
+        {% if respostas %}<div class="campo" style="max-width:360px"><label for="resposta-pronta">Resposta pronta</label><select id="resposta-pronta"><option value="">Escolha um modelo…</option>{% for r in respostas %}<option value="{{ r.id }}" data-texto="{{ r.texto }}">{{ r.titulo }}</option>{% endfor %}</select></div>{% endif %}
+        <div class="campo"><label>Responder</label><textarea name="texto" id="texto-resposta" required placeholder="Mensagem para o cliente (ou nota interna)"></textarea></div>
         {{ m.campo_anexo() }}
         <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
           <label class="check"><input type="checkbox" name="interna" value="1"> Nota interna (cliente não vê)</label>
-          <div><select name="status_apos" aria-label="Status após responder">
+          {% if gerir %}<div><select name="status_apos" aria-label="Status após responder">
             <option value="">Manter status</option>
             <option value="em_atendimento">→ Em atendimento</option>
             <option value="aguardando_cliente">→ Aguardando cliente</option>
-            <option value="resolvido">→ Resolvido</option></select></div>
-          <button class="btn">Enviar</button>
+            <option value="resolvido">→ Resolvido</option></select></div>{% endif %}
+          <button class="btn" {{ 'disabled' if not situacao.ok and usuario.perfil != 'admin' }}>Enviar</button>
         </div>
       </form>
     </div>
-    {% if cron %}
-    <div class="card" id="cronometro"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center">
-      <div><h2 style="margin:0">Cronômetro</h2>
-        <div class="muted small">{% if saldo.restante is none %}Sem limite de horas{% else %}Limite: {{ saldo.descricao }} · restam <b>{{ (cron.limite // 60)|horas if cron.limite is not none else '—' }}</b>{% endif %}</div></div>
-      <div class="cronometro {{ 'rodando' if cron.rodando }}" data-segundos="{{ cron.segundos }}" data-rodando="{{ 1 if cron.rodando else 0 }}" data-limite="{{ cron.limite if cron.limite is not none else '' }}">00:00:00</div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-      {% if cron.rodando %}
-      <form method="post" action="{{ url_for('gestao.cronometro', numero=c.numero, acao='pausar') }}" id="form-pausar">{{ m.csrf_input() }}<button class="btn sec">⏸ Pausar</button></form>
-      {% elif not cron.esgotado %}
-      <form method="post" action="{{ url_for('gestao.cronometro', numero=c.numero, acao='iniciar') }}">{{ m.csrf_input() }}<button class="btn">▶ {{ 'Retomar' if cron.existe else 'Iniciar' }}</button></form>
-      {% else %}<span class="selo bad">Saldo de horas esgotado</span>{% endif %}
-      {% if cron.existe and not cron.rodando %}
-      <form method="post" action="{{ url_for('gestao.cronometro', numero=c.numero, acao='descartar') }}">{{ m.csrf_input() }}<button class="btn perigo">Descartar</button></form>
-      {% endif %}
-    </div>
-    {% if cron.existe %}
-    <form method="post" action="{{ url_for('gestao.cronometro', numero=c.numero, acao='finalizar') }}" class="linha" style="margin-top:12px">{{ m.csrf_input() }}
-      <div style="width:170px"><label>Tipo de serviço</label><select name="tipo_servico_id" required>{% for t in tipos %}<option value="{{ t.id }}" {{ 'selected' if t.id == tipo_padrao }}>{{ t.nome }}</option>{% endfor %}</select></div>
-      <div style="flex:1;min-width:200px"><label>O que foi feito</label><input type="text" name="descricao" required></div>
-      <label class="check"><input type="checkbox" name="faturavel" value="1" checked> Faturável</label>
-      <button class="btn">■ Finalizar e lançar horas</button>
-    </form>{% endif %}
-    </div>
-    {% endif %}
     <div class="card" id="horas"><h2>Horas</h2>
     {% if saldo.restante is not none %}<p class="small {{ 'erro-txt' if saldo.restante <= 0 }}">Saldo: <b>{{ saldo.restante|horas }}</b> restantes ({{ saldo.descricao }}).</p>{% endif %}
+    {% if extra_pendente %}<p class="small"><span class="selo pendente">Horas extras</span> {{ extra_pendente.horas|horas_dec }} aguardando aprovação do cliente desde {{ extra_pendente.solicitado_em|data_hora }}.</p>
+    {% elif c.contrato_id and saldo.origem == 'contrato' and saldo.restante is not none and saldo.restante <= 120 and pode('horas') %}
+    <details class="card" style="background:var(--bg,#f6f8fb);margin:8px 0"><summary class="small"><b>Saldo acabando: solicitar horas extras ao cliente</b></summary>
+    <form method="post" action="{{ url_for('extras.lista') }}" class="linha" style="margin-top:10px">{{ m.csrf_input() }}
+      <input type="hidden" name="chamado" value="{{ c.numero }}"><input type="hidden" name="origem" value="chamado">
+      <div style="width:90px"><label>Horas</label><input type="text" name="horas" required inputmode="decimal"></div>
+      <div style="flex:1;min-width:220px"><label>Justificativa para o cliente</label><input type="text" name="justificativa" required minlength="10"></div>
+      <button class="btn sec">Enviar pedido</button>
+    </form></details>{% endif %}
       <div class="tabela" style="margin-bottom:12px">{% if horas %}<table><thead><tr><th>Data</th><th>Recurso</th><th>Tipo</th><th>O que foi feito</th><th class="num">Tempo</th><th>Faturável</th><th>Status</th><th></th></tr></thead><tbody>
       {% for h in horas %}<tr><td>{{ h.data|data }}</td><td>{{ h.tecnico }}</td><td class="small">{{ h.tipo_servico or '—' }}</td><td>{{ h.descricao }}</td><td class="num">{{ h.minutos|horas }}</td><td>{{ 'Sim' if h.faturavel else 'Não' }}</td><td>{{ m.selo(h.status, 'apontamento') }}</td>
         <td style="white-space:nowrap">{% if usuario.perfil == 'admin' %}<a class="btn sec peq" href="{{ url_for('gestao.apontamento_admin', ap_id=h.id) }}">Editar</a>{% elif h.status == 'pendente' and h.usuario_id == usuario.id %}<a class="btn sec peq" href="{{ url_for('gestao.apontamento_proprio', ap_id=h.id) }}">Editar</a>{% endif %}
@@ -65,13 +51,44 @@
         <div style="width:170px"><label>Tipo de serviço</label><select name="tipo_servico_id" required>{% for t in tipos %}<option value="{{ t.id }}" {{ 'selected' if t.id == tipo_padrao }}>{{ t.nome }}</option>{% endfor %}</select></div>
         <div style="flex:1;min-width:220px"><label>O que foi feito</label><input type="text" name="descricao" required></div>
         <label class="check"><input type="checkbox" name="faturavel" value="1" checked> Faturável</label>
-        <button class="btn">Lançar</button>
+        <button class="btn" {{ 'disabled' if bloqueio }}>Lançar</button>
       </form>
     </div>
   </div>
   <div>
+    {% if cron %}
+    <div class="card cron-card" id="cronometro">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3 style="margin:0">Cronômetro</h3>
+        <div class="cronometro {{ 'rodando' if cron.rodando }}" data-segundos="{{ cron.segundos }}" data-rodando="{{ 1 if cron.rodando else 0 }}" data-limite="{{ cron.limite if cron.limite is not none else '' }}" data-outros="{{ cron.outros_rodando }}" data-estado="{{ url_for('gestao.cronometro_estado', numero=c.numero) }}">00:00:00</div></div>
+      <div class="muted small" style="margin-top:6px">{% if saldo.restante is none %}Sem limite de horas{% else %}{{ saldo.descricao|capitalize }} · disponível <b class="cron-disp">{{ (cron.limite // 60)|horas if cron.limite is not none else '—' }}</b>{% if cron.outros_rodando %} · <span class="erro-txt">{{ cron.outros_rodando }} outro(s) cronômetro(s) usando o mesmo saldo agora</span>{% endif %}{% endif %}</div>
+      <div class="aviso erro cron-alerta" hidden role="alert"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        {% if cron.rodando %}
+        <form method="post" action="{{ url_for('gestao.cronometro', numero=c.numero, acao='pausar') }}" id="form-pausar">{{ m.csrf_input() }}<button class="btn sec">⏸ Pausar</button></form>
+        {% elif bloqueio %}<span class="selo bad">Atendimento bloqueado</span>
+        {% elif not cron.esgotado %}
+        <form method="post" action="{{ url_for('gestao.cronometro', numero=c.numero, acao='iniciar') }}">{{ m.csrf_input() }}<button class="btn">▶ {{ 'Retomar' if cron.existe else 'Iniciar' }}</button></form>
+        {% else %}<span class="selo bad">Saldo de horas esgotado</span>{% endif %}
+        {% if cron.existe and not cron.rodando %}
+        <form method="post" action="{{ url_for('gestao.cronometro', numero=c.numero, acao='descartar') }}">{{ m.csrf_input() }}<button class="btn perigo">Descartar</button></form>
+        {% endif %}
+      </div>
+      {% if cron.existe %}
+      <form method="post" action="{{ url_for('gestao.cronometro', numero=c.numero, acao='finalizar') }}" style="margin-top:10px" id="form-finalizar">{{ m.csrf_input() }}
+        <div class="campo"><label>Tipo de serviço</label><select name="tipo_servico_id" required>{% for t in tipos %}<option value="{{ t.id }}" {{ 'selected' if t.id == tipo_padrao }}>{{ t.nome }}</option>{% endfor %}</select></div>
+        <div class="campo"><label>O que foi feito</label><textarea name="descricao" required rows="2"></textarea></div>
+        <label class="check"><input type="checkbox" name="faturavel" value="1" checked> Faturável</label>
+        <button class="btn" style="width:100%;margin-top:8px">■ Finalizar e lançar horas</button>
+      </form>{% endif %}
+    </div>
+    {% endif %}
     <div class="card"><h3>Detalhes</h3>
       <dl class="ficha">
+        <dt>Status</dt><dd data-espelho="status">{{ c.status|rotulo('status') }}</dd>
+        <dt>Prioridade</dt><dd data-espelho="prioridade">{{ c.prioridade|rotulo('prioridade') }}</dd>
+        <dt>Responsável</dt><dd data-espelho="responsavel_id">{{ responsavel or '—' }}</dd>
+        <dt>Contrato</dt><dd data-espelho="contrato_id">{{ (contratos|selectattr('id','equalto',c.contrato_id)|map(attribute='descricao')|first) or '—' }}</dd>
+        {% if saldo.restante is not none %}<dt>Saldo</dt><dd class="{{ 'erro-txt' if saldo.restante <= 0 }}">{{ saldo.restante|horas }} <span class="muted small">({{ saldo.descricao }})</span></dd>{% endif %}
         <dt>Cliente</dt><dd><a href="{{ url_for('equipe.cliente', cliente_id=c.cliente_id) }}">{{ c.cliente_nome }}</a></dd>
         <dt>Solicitante</dt><dd>{{ solicitante.nome if solicitante else c.solicitante_email }}</dd>
         <dt>Origem</dt><dd>{{ c.origem|rotulo('origem') }}</dd>
@@ -84,6 +101,17 @@
         {% if c.avaliacao %}<dt>Avaliação</dt><dd>{{ c.avaliacao }}/5 {{ c.avaliacao_comentario or '' }}</dd>{% endif %}
       </dl>
     </div>
+    {% if gerir %}
+    <form class="card" method="post" action="{{ url_for('equipe.chamado_atualizar', numero=c.numero) }}" id="form-atualizar">
+      {{ m.csrf_input() }}<h3>Atualizar</h3>
+      <div class="campo"><label>Contrato *</label><select name="contrato_id" required><option value="">Escolha…</option>{% for ct in contratos %}<option value="{{ ct.id }}" {{ 'selected' if c.contrato_id == ct.id }}>{{ ct.descricao }}{% if not ct.situacao.ok %} — {{ 'sem saldo' if 'saldo' in ct.situacao.motivo else 'indisponível' }}{% endif %}</option>{% endfor %}</select><div class="ajuda">Só contratos ativos, vigentes e com saldo liberam o atendimento.</div></div>
+      <div class="campo"><label>Responsável *</label><select name="responsavel_id" required><option value="">Escolha…</option>{% for t in tecnicos %}<option value="{{ t.id }}" {{ 'selected' if c.responsavel_id == t.id }}>{{ t.nome }}</option>{% endfor %}</select></div>
+      <div class="campo"><label>Status *</label><select name="status">{% for s in status_lista %}<option value="{{ s }}" {{ 'selected' if c.status == s }}>{{ s|rotulo('status') }}</option>{% endfor %}</select></div>
+      <div class="campo"><label>Prioridade *</label><select name="prioridade">{% for p in prioridades %}<option value="{{ p }}" {{ 'selected' if c.prioridade == p }}>{{ p|rotulo('prioridade') }}</option>{% endfor %}</select><div class="ajuda">Mudar a prioridade recalcula o prazo.</div></div>
+      <div class="campo"><label>Categoria</label><input type="text" name="categoria" value="{{ c.categoria or '' }}"></div>
+      <button class="btn" style="width:100%">Salvar</button>
+    </form>
+    {% endif %}
     <div class="card" id="agenda"><h3>Agenda</h3>
       {% for a in agendamentos %}<div class="small" style="margin-bottom:8px">
         <b>{{ 'Visita' if a.tipo == 'visita' else 'Reunião' }}</b> · {{ a.inicio|data_hora }} · {{ a.recurso }}
@@ -104,15 +132,7 @@
         <button class="btn" style="width:100%">Agendar</button>
       </form></details>
     </div>
-    <form class="card" method="post" action="{{ url_for('equipe.chamado_atualizar', numero=c.numero) }}">
-      {{ m.csrf_input() }}<h3>Atualizar</h3>
-      <div class="campo"><label>Status</label><select name="status">{% for s in status_lista %}<option value="{{ s }}" {{ 'selected' if c.status == s }}>{{ s|rotulo('status') }}</option>{% endfor %}</select></div>
-      <div class="campo"><label>Prioridade</label><select name="prioridade">{% for p in prioridades %}<option value="{{ p }}" {{ 'selected' if c.prioridade == p }}>{{ p|rotulo('prioridade') }}</option>{% endfor %}</select><div class="ajuda">Mudar a prioridade recalcula o prazo.</div></div>
-      <div class="campo"><label>Responsável</label><select name="responsavel_id"><option value="">Ninguém</option>{% for t in tecnicos %}<option value="{{ t.id }}" {{ 'selected' if c.responsavel_id == t.id }}>{{ t.nome }}</option>{% endfor %}</select></div>
-      <div class="campo"><label>Contrato</label><select name="contrato_id"><option value="">Sem contrato</option>{% for ct in contratos %}<option value="{{ ct.id }}" {{ 'selected' if c.contrato_id == ct.id }}>{{ ct.descricao }}</option>{% endfor %}</select></div>
-      <div class="campo"><label>Categoria</label><input type="text" name="categoria" value="{{ c.categoria or '' }}"></div>
-      <button class="btn">Salvar</button>
-    </form>
+    {% if artigos %}<div class="card"><h3>Artigos relacionados</h3><ul class="lista-simples">{% for a in artigos %}<li><a href="{{ url_for('kb.ver', aid=a.id) }}" target="_blank">{{ a.titulo }}</a>{% if a.publico %} <span class="selo ok">público</span>{% endif %}</li>{% endfor %}</ul></div>{% endif %}
   </div>
 </div>
 {% endblock %}

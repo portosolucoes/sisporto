@@ -186,3 +186,5 @@ textarea.sql{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fo
 .side nav details.pasta>div{padding-left:14px;border-left:1px solid rgba(255,255,255,.12);margin-left:16px}
 .side nav details.pasta>div a{font-size:14px;padding:7px 10px}
 .contador{background:#e0a100;color:#1b1b1b;border-radius:999px;font-size:11px;font-weight:700;padding:1px 7px;margin-left:4px}
+.itens-contrato td{padding:6px}.itens-contrato input,.itens-contrato select{width:100%}
+.cron-card .cronometro{font-size:24px;padding:8px 12px}.cron-alerta{margin-top:10px}

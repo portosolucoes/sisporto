@@ -38,13 +38,14 @@ def _hoje():
 @equipe
 def painel():
     uid = g.usuario["id"]
-    resumo = db().one("""
+    fv, pv = ch.filtro_visivel()
+    resumo = db().one(f"""
         SELECT count(*) FILTER (WHERE status IN ('novo','em_atendimento','aguardando_cliente')) AS abertos,
                count(*) FILTER (WHERE situacao_sla = 'estourado')  AS estourados,
                count(*) FILTER (WHERE situacao_sla = 'em_risco')   AS em_risco,
                count(*) FILTER (WHERE status = 'aguardando_cliente') AS aguardando,
                count(*) FILTER (WHERE responsavel_id IS NULL AND status IN ('novo','em_atendimento')) AS sem_responsavel
-          FROM vw_chamados_sla""")
+          FROM vw_chamados_sla WHERE {fv}""", pv)
     meus = db().all("""
         SELECT * FROM vw_chamados_sla
          WHERE responsavel_id = %s AND status IN ('novo','em_atendimento','aguardando_cliente')
@@ -95,6 +96,8 @@ def chamados():
         else:
             where.append("(titulo ILIKE %s OR descricao ILIKE %s)")
             params += [f"%{termo}%", f"%{termo}%"]
+    fv, pv = ch.filtro_visivel()
+    where.append(fv); params += pv
     sql = "SELECT * FROM vw_chamados_sla"
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -141,7 +144,7 @@ def chamado_novo():
 @bp.get("/chamados/<int:numero>")
 @requer("chamados")
 def chamado(numero):
-    c = ch.buscar(numero)
+    c = ch.buscar_equipe(numero)
     tempo = ch.linha_do_tempo(c["id"])
     horas = db().all("""SELECT a.*, u.nome AS tecnico, ts.nome AS tipo_servico
                           FROM apontamentos a JOIN usuarios u ON u.id = a.usuario_id
@@ -152,25 +155,43 @@ def chamado(numero):
     solicitante = db().one("SELECT nome, email, codigo FROM usuarios WHERE id = %s", [c["solicitante_id"]]) \
         if c["solicitante_id"] else None
     anexos = anx.listar(c["id"])
+    from .rotas_conhecimento import buscar_artigos, respostas_para
     from .rotas_gestao import estado_cronometro
-    from .saldos import saldo_chamado
+    from .saldos import bloqueio_atendimento, saldo_chamado, situacao_contrato, tipos_permitidos
     cron = estado_cronometro(c["id"]) if pode("horas") else None
     saldo = saldo_chamado(c["id"])
     tipo_padrao = db().val("SELECT tipo_servico_id FROM contratos WHERE id = %s", [c["contrato_id"]]) \
         if c["contrato_id"] else None
+    contratos = [{**ct, "situacao": situacao_contrato(ct["id"])} for ct in contratos]
+    responsavel = db().val("SELECT nome FROM usuarios WHERE id = %s", [c["responsavel_id"]]) \
+        if c["responsavel_id"] else None
     agendamentos = db().all("""SELECT a.*, u.nome AS recurso FROM agendamentos a JOIN usuarios u ON u.id = a.recurso_id
                                 WHERE a.chamado_id = %s ORDER BY a.inicio DESC""", [c["id"]])
     return render_template("equipe/chamado.html", c=c, tempo=tempo, horas=horas, tecnicos=_tecnicos(),
                            contratos=contratos, solicitante=solicitante, prioridades=ch.PRIORIDADES, anexos=anexos,
                            agendamentos=agendamentos, cron=cron, saldo=saldo, tipo_padrao=tipo_padrao,
-                           status_lista=ch.STATUS, hoje=_hoje(), tipos=_tipos_servico())
+                           status_lista=ch.STATUS, hoje=_hoje(), tipos=tipos_permitidos(c["contrato_id"]),
+                           bloqueio=bloqueio_atendimento(c), situacao=situacao_contrato(c["contrato_id"]),
+                           responsavel=responsavel, gerir=pode("chamados_gerir"),
+                           respostas=respostas_para(c, solicitante),
+                           artigos=buscar_artigos(c["titulo"], so_publicos=False, limite=3),
+                           extra_pendente=db().one("""SELECT * FROM horas_extras WHERE contrato_id = %s AND status = 'pendente'
+                                                      ORDER BY id DESC LIMIT 1""", [c["contrato_id"]])
+                           if c["contrato_id"] else None)
 
 
 @bp.post("/chamados/<int:numero>/responder")
 @requer("chamados")
 def chamado_responder(numero):
-    c = ch.buscar(numero)
+    c = ch.buscar_equipe(numero)
     try:
+        from .saldos import situacao_contrato
+        s = situacao_contrato(c["contrato_id"])
+        if not s["ok"] and not eh_admin():
+            raise ValueError(s["motivo"] + " O chamado não pode ser alterado até ser vinculado a um contrato "
+                             "ativo com saldo de horas.")
+        if request.form.get("status_apos") and not pode("chamados_gerir"):
+            raise ValueError("Você não tem permissão para mudar o status do chamado.")
         interna = request.form.get("interna") == "1"
         texto = request.form.get("texto")
         anexo = anx.validar(request.files.get("anexo"))
@@ -194,8 +215,10 @@ def chamado_responder(numero):
 @bp.post("/chamados/<int:numero>/atualizar")
 @requer("chamados")
 def chamado_atualizar(numero):
-    c = ch.buscar(numero)
+    c = ch.buscar_equipe(numero)
     f = request.form
+    if not pode("chamados_gerir"):
+        abort(403)
     status = f.get("status") if f.get("status") in ch.STATUS else c["status"]
     prioridade = f.get("prioridade") if f.get("prioridade") in ch.PRIORIDADES else c["prioridade"]
     resp = _int(f.get("responsavel_id"))
@@ -205,6 +228,19 @@ def chamado_atualizar(numero):
     if contrato and not db().val("SELECT 1 FROM contratos WHERE id = %s AND cliente_id = %s",
                                  [contrato, c["cliente_id"]]):
         abort(400)
+    from .saldos import situacao_contrato
+    erro = None
+    if not contrato or not resp:
+        erro = "Contrato e responsável são obrigatórios para atender o chamado."
+    else:
+        sc = situacao_contrato(contrato)
+        if not sc["ok"]:
+            erro = sc["motivo"] + " Escolha um contrato ativo com saldo de horas."
+    if erro and not eh_admin():
+        flash(erro, "erro")
+        return redirect(url_for("equipe.chamado", numero=numero))
+    if erro:
+        flash("Atenção (salvo como administrador): " + erro, "erro")
     db().run("""UPDATE chamados SET status = %s, prioridade = %s, responsavel_id = %s, contrato_id = %s,
                        categoria = %s WHERE id = %s""",
              [status, prioridade, resp, contrato, (f.get("categoria") or "").strip() or None, c["id"]])
@@ -234,6 +270,8 @@ def _validar_apontamento(form):
         raise ValueError("Descreva o que foi feito.")
     if not tipo or not db().val("SELECT 1 FROM tipos_servico WHERE id = %s AND ativo", [tipo]):
         raise ValueError("Escolha o tipo de serviço.")
+    from .saldos import checar_periodo
+    checar_periodo(data)
     return {"minutos": minutos, "descricao": descricao, "data": data, "tipo": tipo,
             "faturavel": form.get("faturavel") == "1"}
 
@@ -245,10 +283,14 @@ def _tipos_servico():
 @bp.post("/chamados/<int:numero>/horas")
 @requer("horas")
 def chamado_horas(numero):
-    c = ch.buscar(numero)
+    c = ch.buscar_equipe(numero)
     try:
         v = _validar_apontamento(request.form)
-        from .saldos import saldo_chamado
+        from .saldos import bloqueio_atendimento, saldo_chamado, validar_tipo
+        b = bloqueio_atendimento(c)
+        if b:
+            raise ValueError(b)
+        validar_tipo(c["contrato_id"], v["tipo"])
         s = saldo_chamado(c["id"])
         if s["restante"] is not None and v["minutos"] > s["restante"] and g.usuario["perfil"] != "admin":
             r = max(s["restante"], 0)
@@ -258,6 +300,8 @@ def chamado_horas(numero):
                                               tipo_servico_id)
                     VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                  [g.usuario["id"], c["id"], v["data"], v["minutos"], v["faturavel"], v["descricao"], v["tipo"]])
+        from .alertas import verificar_alertas_saldo
+        verificar_alertas_saldo(c["contrato_id"])
         flash("Horas lançadas.", "ok")
     except ValueError as e:
         flash(str(e), "erro")
@@ -273,10 +317,19 @@ def horas_lancar():
         if not contrato or not db().val("SELECT 1 FROM contratos WHERE id = %s AND ativo", [contrato]):
             raise ValueError("Escolha o cliente e o contrato.")
         v = _validar_apontamento(request.form)
+        from .saldos import situacao_contrato, validar_tipo
+        sc = situacao_contrato(contrato)
+        if not sc["ok"]:
+            raise ValueError(sc["motivo"])
+        if sc["saldo_min"] is not None and v["minutos"] > sc["saldo_min"] and not eh_admin():
+            raise ValueError(f"Saldo insuficiente no contrato: restam {sc['saldo_min'] // 60}h{sc['saldo_min'] % 60:02d}.")
+        validar_tipo(contrato, v["tipo"])
         db().run("""INSERT INTO apontamentos (usuario_id, contrato_id, data, minutos, faturavel, descricao,
                                               tipo_servico_id)
                     VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                  [g.usuario["id"], contrato, v["data"], v["minutos"], v["faturavel"], v["descricao"], v["tipo"]])
+        from .alertas import verificar_alertas_saldo
+        verificar_alertas_saldo(contrato)
         flash("Horas lançadas no contrato.", "ok")
     except ValueError as e:
         flash(str(e), "erro")
@@ -395,6 +448,51 @@ CAMPOS_CONTRATO = ["tipo", "descricao", "valor_mensal", "franquia_horas", "valor
                    "sla_politica_id", "observacoes", "tipo_servico_id"]
 
 
+def _itens_contrato(form):
+    """Itens (tipos de serviço) do contrato vindos do formulário: listas item_tipo/item_horas/item_valor/item_desc."""
+    tipos, horas = form.getlist("item_tipo"), form.getlist("item_horas")
+    valores, descs = form.getlist("item_valor"), form.getlist("item_desc")
+    itens, vistos = [], set()
+    for i, t in enumerate(tipos):
+        tid = _int(t)
+        if not tid:
+            continue
+        if tid in vistos:
+            raise ValueError("Cada tipo de serviço só pode aparecer uma vez nos itens do contrato.")
+        if not db().val("SELECT 1 FROM tipos_servico WHERE id = %s", [tid]):
+            raise ValueError("Tipo de serviço inválido nos itens.")
+        vistos.add(tid)
+        h = parse_decimal(horas[i] if i < len(horas) else None)
+        v = parse_decimal(valores[i] if i < len(valores) else None)
+        if (h is not None and h < 0) or (v is not None and v < 0):
+            raise ValueError("Horas e valores dos itens não podem ser negativos.")
+        itens.append({"tipo_servico_id": tid, "horas": h, "valor_hora": v, "ordem": i,
+                      "descricao": ((descs[i] if i < len(descs) else "") or "").strip() or None})
+    return itens
+
+
+def _itens_form(form):
+    """Reapresenta os itens digitados quando o formulário volta com erro."""
+    tipos, horas = form.getlist("item_tipo"), form.getlist("item_horas")
+    valores, descs = form.getlist("item_valor"), form.getlist("item_desc")
+    return [{"tipo_servico_id": _int(t), "horas": horas[i] if i < len(horas) else "",
+             "valor_hora": valores[i] if i < len(valores) else "", "descricao": descs[i] if i < len(descs) else ""}
+            for i, t in enumerate(tipos) if t]
+
+
+def salvar_itens(contrato_id, itens):
+    db().run("DELETE FROM contrato_itens WHERE contrato_id = %s", [contrato_id])
+    for i in itens:
+        db().run("""INSERT INTO contrato_itens (contrato_id, tipo_servico_id, horas, valor_hora, descricao, ordem)
+                    VALUES (%s,%s,%s,%s,%s,%s)""",
+                 [contrato_id, i["tipo_servico_id"], i["horas"], i["valor_hora"], i["descricao"], i["ordem"]])
+
+
+def itens_do_contrato(contrato_id):
+    return db().all("""SELECT i.*, ts.nome FROM contrato_itens i JOIN tipos_servico ts ON ts.id = i.tipo_servico_id
+                        WHERE i.contrato_id = %s ORDER BY i.ordem, i.id""", [contrato_id]) if contrato_id else []
+
+
 def _dados_contrato(form):
     tipo = form.get("tipo")
     if tipo not in ("mensal_fixo", "banco_horas", "hora_avulsa", "projeto", "proposta_avulsa"):
@@ -423,6 +521,24 @@ def _dados_contrato(form):
         "observacoes": (form.get("observacoes") or "").strip() or None,
         "tipo_servico_id": _int(form.get("tipo_servico_id")),
     }
+    if vals["data_fim"] and vals["data_fim"] < inicio:
+        raise ValueError("A data de fim não pode ser anterior à data de início.")
+    if vals["dia_vencimento"] is not None and not 1 <= vals["dia_vencimento"] <= 31:
+        raise ValueError("Dia de vencimento deve ser de 1 a 31.")
+    if vals["mes_reajuste"] is not None and not 1 <= vals["mes_reajuste"] <= 12:
+        raise ValueError("Mês do reajuste deve ser de 1 a 12.")
+    for k in ("valor_mensal", "franquia_horas", "valor_hora", "horas_pacote", "valor_total"):
+        if vals[k] is not None and vals[k] < 0:
+            raise ValueError("Valores e horas não podem ser negativos.")
+    itens = _itens_contrato(form)
+    soma = sum((i["horas"] or 0) for i in itens)
+    if itens and all(i["horas"] is not None for i in itens) and vals["horas_pacote"] is None:
+        vals["horas_pacote"] = soma  # horas liberadas = soma dos itens
+    if vals["horas_pacote"] is not None and soma > vals["horas_pacote"]:
+        raise ValueError(f"A soma das horas dos itens ({soma}h) passa das horas liberadas do contrato "
+                         f"({vals['horas_pacote']}h).")
+    vals["itens"] = itens
+    vals["tipo_servico_id"] = itens[0]["tipo_servico_id"] if itens else vals["tipo_servico_id"]
     if vals["sla_politica_id"] and not db().val("SELECT 1 FROM sla_politicas WHERE id = %s",
                                                 [vals["sla_politica_id"]]):
         raise ValueError("Política de SLA inválida.")
@@ -442,9 +558,10 @@ def contrato_novo(cliente_id):
     if request.method == "POST":
         try:
             v = _dados_contrato(request.form)
-            db().run(f"""INSERT INTO contratos (cliente_id, {', '.join(CAMPOS_CONTRATO)})
-                         VALUES (%s, {', '.join(['%s'] * len(CAMPOS_CONTRATO))})""",
-                     [cliente_id] + [v[k] for k in CAMPOS_CONTRATO])
+            novo_id = db().val(f"""INSERT INTO contratos (cliente_id, {', '.join(CAMPOS_CONTRATO)})
+                                   VALUES (%s, {', '.join(['%s'] * len(CAMPOS_CONTRATO))}) RETURNING id""",
+                               [cliente_id] + [v[k] for k in CAMPOS_CONTRATO])
+            salvar_itens(novo_id, v["itens"])
             flash("Contrato incluído.", "ok")
             return redirect(_voltar(url_for("equipe.cliente", cliente_id=cliente_id)))
         except ValueError as e:
@@ -453,7 +570,8 @@ def contrato_novo(cliente_id):
             db().rollback()
             flash("Dados do contrato inconsistentes. Confira os valores.", "erro")
     return render_template("equipe/contrato_form.html", cliente=c, ct=request.form, novo=True,
-                           politicas=_politicas(), tipos=_tipos_servico(), voltar=_voltar(""))
+                           politicas=_politicas(), tipos=_tipos_servico(), voltar=_voltar(""),
+                           itens=_itens_form(request.form))
 
 
 @bp.route("/contratos/<int:contrato_id>", methods=["GET", "POST"])
@@ -467,6 +585,7 @@ def contrato(contrato_id):
             sets = ", ".join(f"{k} = %s" for k in CAMPOS_CONTRATO)
             db().run(f"UPDATE contratos SET {sets}, ativo = %s WHERE id = %s",
                      [v[k] for k in CAMPOS_CONTRATO] + [request.form.get("ativo") == "1", contrato_id])
+            salvar_itens(contrato_id, v["itens"])
             flash("Contrato atualizado.", "ok")
             return redirect(_voltar(url_for("equipe.cliente", cliente_id=c["id"])))
         except ValueError as e:
@@ -475,8 +594,11 @@ def contrato(contrato_id):
             db().rollback()
             flash("Dados do contrato inconsistentes. Confira os valores.", "erro")
         ct = dict(request.form)
+        itens = _itens_form(request.form)
+    else:
+        itens = itens_do_contrato(contrato_id)
     return render_template("equipe/contrato_form.html", cliente=c, ct=ct, novo=False, contrato_id=contrato_id,
-                           politicas=_politicas(), tipos=_tipos_servico(), voltar=_voltar(""))
+                           politicas=_politicas(), tipos=_tipos_servico(), voltar=_voltar(""), itens=itens)
 
 
 @bp.post("/clientes/<int:cliente_id>/contatos")
@@ -497,11 +619,12 @@ def contato_novo(cliente_id):
     senha = _senha_temporaria()
     try:
         codigo = db().val("""INSERT INTO usuarios (nome, email, perfil, cliente_id, telefone, cargo, recebe_nps,
-                                                   senha_hash, senha_provisoria)
-                             VALUES (%s,%s,'cliente',%s,%s,%s,%s,%s,true) RETURNING codigo""",
+                                                   senha_hash, senha_provisoria, recebe_alerta_saldo, aprova_horas_extras)
+                             VALUES (%s,%s,'cliente',%s,%s,%s,%s,%s,true,%s,%s) RETURNING codigo""",
                           [nome, email, cliente_id, (request.form.get("telefone") or "").strip() or None,
                            (request.form.get("cargo") or "").strip() or None, request.form.get("recebe_nps") == "1",
-                           generate_password_hash(senha)])
+                           generate_password_hash(senha), request.form.get("recebe_alerta_saldo") == "1",
+                           request.form.get("aprova_horas_extras") == "1"])
         flash(f"Usuário {codigo} criado para {email}. Senha temporária: {senha} — envie ao usuário e peça "
               f"para trocar no primeiro acesso.", "ok")
     except IntegrityError:
@@ -612,6 +735,10 @@ def usuario_editar(usuario_id):
             custo = parse_decimal(f.get("custo_hora")) if u["perfil"] != "cliente" else None
             if custo is not None and custo < 0:
                 raise ValueError("Custo/hora inválido.")
+            cli = u["perfil"] == "cliente"
+            db().run("UPDATE usuarios SET recebe_alerta_saldo = %s, aprova_horas_extras = %s WHERE id = %s",
+                     [cli and f.get("recebe_alerta_saldo") == "1", cli and f.get("aprova_horas_extras") == "1",
+                      usuario_id])
             db().run("""UPDATE usuarios SET nome=%s, email=%s, telefone=%s, cargo=%s, departamento=%s, observacoes=%s,
                                custo_hora=%s, recebe_nps=%s WHERE id=%s""",
                      [nome, email, (f.get("telefone") or "").strip() or None, (f.get("cargo") or "").strip() or None,
@@ -637,7 +764,9 @@ def usuario_editar(usuario_id):
             db().rollback()
             flash("Já existe outro usuário com esse e-mail.", "erro")
         u = {**u, **{k: f.get(k) for k in ("nome", "email", "telefone", "cargo", "departamento", "observacoes",
-                                            "custo_hora")}, "recebe_nps": f.get("recebe_nps") == "1"}
+                                            "custo_hora")}, "recebe_nps": f.get("recebe_nps") == "1",
+             "recebe_alerta_saldo": f.get("recebe_alerta_saldo") == "1",
+             "aprova_horas_extras": f.get("aprova_horas_extras") == "1"}
     cliente = db().one("SELECT id, coalesce(nome_fantasia, razao_social) AS nome FROM clientes WHERE id = %s",
                        [u["cliente_id"]]) if u.get("cliente_id") else None
     acessos = None
@@ -694,29 +823,78 @@ def usuario_atualizar(usuario_id):
 @bp.get("/horas")
 @equipe
 def horas():
-    ref = request.args.get("semana")
+    if not (pode("horas") or eh_admin()):
+        abort(403)
+    a = request.args
+    ref = a.get("semana")
     try:
         base = dt.date.fromisoformat(ref) if ref else _hoje()
     except ValueError:
         base = _hoje()
     inicio = base - dt.timedelta(days=base.weekday())
     fim = inicio + dt.timedelta(days=6)
-    if not (pode("horas") or eh_admin()):
-        abort(403)
-    minhas = db().all("""
-        SELECT a.*, c.numero, c.titulo, cl.nome_fantasia AS cliente, ts.nome AS tipo_servico, ct.descricao AS contrato
+    try:
+        de = dt.date.fromisoformat(a["de"]) if a.get("de") else inicio
+        ate = dt.date.fromisoformat(a["ate"]) if a.get("ate") else (fim if not a.get("de") else _hoje())
+    except ValueError:
+        de, ate = inicio, fim
+    f = {"de": de, "ate": ate, "cliente": _int(a.get("cliente")), "tipo": _int(a.get("tipo")),
+         "chamado": (a.get("chamado") or "").strip(), "descricao": (a.get("descricao") or "").strip(),
+         "duracao": (a.get("duracao") or "").strip(), "status": a.get("status") or ""}
+    where, p = ["a.usuario_id = %s", "a.data BETWEEN %s AND %s"], [g.usuario["id"], de, ate]
+    if f["cliente"]:
+        where.append("cl.id = %s"); p.append(f["cliente"])
+    if f["tipo"]:
+        where.append("a.tipo_servico_id = %s"); p.append(f["tipo"])
+    if f["chamado"]:
+        num = f["chamado"].lstrip("#")
+        if num.isdigit():
+            where.append("(c.numero = %s OR c.titulo ILIKE %s)"); p += [int(num), f"%{num}%"]
+        else:
+            where.append("(c.titulo ILIKE %s OR ct.descricao ILIKE %s)"); p += [f"%{f['chamado']}%"] * 2
+    if f["descricao"]:
+        where.append("a.descricao ILIKE %s"); p.append(f"%{f['descricao']}%")
+    if f["duracao"]:
+        m = parse_duracao(f["duracao"])
+        if m:
+            where.append("a.minutos = %s"); p.append(m)
+    if f["status"] in ("pendente", "aprovado", "rejeitado"):
+        where.append("a.status = %s"); p.append(f["status"])
+    minhas = db().all(f"""
+        SELECT a.*, c.numero, c.titulo, coalesce(cl.nome_fantasia, cl.razao_social) AS cliente,
+               ts.nome AS tipo_servico, ct.descricao AS contrato
           FROM apontamentos a
           LEFT JOIN tipos_servico ts ON ts.id = a.tipo_servico_id
           LEFT JOIN chamados c ON c.id = a.chamado_id
           LEFT JOIN contratos ct ON ct.id = a.contrato_id
           LEFT JOIN clientes cl ON cl.id = coalesce(c.cliente_id, ct.cliente_id)
-         WHERE a.usuario_id = %s AND a.data BETWEEN %s AND %s
-         ORDER BY a.data, a.id""", [g.usuario["id"], inicio, fim])
+         WHERE {' AND '.join(where)}
+         ORDER BY a.data, a.id""", p)
+    formato = request.args.get("formato")
+    if formato in ("xlsx", "pdf"):
+        from . import exportar
+        for l in minhas:
+            l["chamado"] = f"#{l['numero']}" if l["numero"] else ""
+            l["titulo_ref"] = l["titulo"] or l["contrato"]
+        total = sum(l["minutos"] for l in minhas)
+        dados = {"cards": [("Total", total, "horas"), ("Lançamentos", len(minhas), "num"),
+                           ("Aprovadas", sum(l["minutos"] for l in minhas if l["status"] == "aprovado"), "horas"),
+                           ("Pendentes", sum(l["minutos"] for l in minhas if l["status"] == "pendente"), "horas")],
+                 "tabelas": [{"titulo": "Minhas horas", "linhas": minhas, "larguras": [8, 7, 24, 15, 11, 25, 7, 8],
+                              "total": {"descricao": "Total", "minutos": total},
+                              "colunas": [("data", "Data", "data"), ("chamado", "Chamado", "texto"),
+                                          ("titulo_ref", "Título / contrato", "texto"), ("cliente", "Cliente", "texto"),
+                                          ("tipo_servico", "Tipo", "texto"), ("descricao", "O que foi feito", "texto"),
+                                          ("minutos", "Tempo", "horas"), ("status", "Status", "texto")]}]}
+        return exportar.resposta(formato, f"Horas de {g.usuario['nome']}",
+                                 f"Período: {de:%d/%m/%Y} a {ate:%d/%m/%Y}", dados, "minhas_horas")
     pendentes = db().val("SELECT count(*) FROM apontamentos WHERE status = 'pendente'") if eh_admin() else 0
     contratos = db().all("""SELECT ct.id, ct.cliente_id, ct.descricao, ct.tipo FROM contratos ct
                               JOIN clientes c ON c.id = ct.cliente_id WHERE ct.ativo AND c.ativo ORDER BY ct.descricao""")
-    return render_template("equipe/horas.html", minhas=minhas, pendentes=pendentes, inicio=inicio, fim=fim,
-                           anterior=inicio - dt.timedelta(days=7), proxima=inicio + dt.timedelta(days=7),
+    filtrado = any(a.get(k) for k in ("de", "ate", "cliente", "tipo", "chamado", "descricao", "duracao", "status"))
+    return render_template("equipe/horas.html", minhas=minhas, pendentes=pendentes, inicio=inicio, fim=fim, f=f,
+                           filtrado=filtrado, anterior=inicio - dt.timedelta(days=7),
+                           proxima=inicio + dt.timedelta(days=7),
                            clientes=_clientes_ativos(), contratos=contratos, tipos=_tipos_servico(), hoje=_hoje())
 
 
@@ -728,11 +906,11 @@ def horas_aprovar():
     if not ids:
         flash("Selecione ao menos um lançamento.", "erro")
     elif acao in ("aprovado", "rejeitado"):
-        n = 0
-        for i in ids:
-            n += db().run("""UPDATE apontamentos SET status = %s, aprovado_por = %s
-                              WHERE id = %s AND status = 'pendente'""", [acao, g.usuario["id"], i])
-        flash(f"{n} lançamento(s) {'aprovado(s)' if acao == 'aprovado' else 'rejeitado(s)'}.", "ok")
+        from .rotas_gestao import notificar_aprovacao
+        feitos = [i for i in ids if db().run("""UPDATE apontamentos SET status = %s, aprovado_por = %s
+                                                 WHERE id = %s AND status = 'pendente'""", [acao, g.usuario["id"], i])]
+        notificar_aprovacao(feitos, acao)
+        flash(f"{len(feitos)} lançamento(s) {'aprovado(s)' if acao == 'aprovado' else 'rejeitado(s)'}.", "ok")
     return redirect(_voltar(url_for("gestao.aprovacao")))
 
 
@@ -742,8 +920,11 @@ def hora_excluir(apontamento_id):
     a = db().one("SELECT * FROM apontamentos WHERE id = %s", [apontamento_id]) or abort(404)
     if a["usuario_id"] != g.usuario["id"] and not eh_admin():
         abort(403)
+    from .saldos import periodo_fechado
     if a["status"] != "pendente":
         flash("Só é possível excluir lançamentos ainda não aprovados.", "erro")
+    elif periodo_fechado(a["data"]):
+        flash("Este lançamento está num período fechado e não pode ser excluído.", "erro")
     else:
         db().run("DELETE FROM apontamentos WHERE id = %s", [apontamento_id])
         flash("Lançamento excluído.", "ok")
@@ -906,7 +1087,7 @@ def config_integracoes():
 @bp.post("/chamados/<int:numero>/agendar")
 @requer("chamados")
 def chamado_agendar(numero):
-    c = ch.buscar(numero)
+    c = ch.buscar_equipe(numero)
     f = request.form
     try:
         tipo = f.get("tipo")
@@ -957,6 +1138,7 @@ def chamado_agendar(numero):
 def agendamento_cancelar(ag_id):
     a = db().one("""SELECT a.*, c.numero FROM agendamentos a JOIN chamados c ON c.id = a.chamado_id
                      WHERE a.id = %s""", [ag_id]) or abort(404)
+    ch.buscar_equipe(a["numero"])
     novo = "cancelado" if a["status"] == "pendente" else "cancelar" if a["status"] == "criado" else a["status"]
     db().run("UPDATE agendamentos SET status = %s WHERE id = %s", [novo, ag_id])
     flash("Agendamento cancelado. O evento será removido da agenda.", "ok")
