@@ -2,7 +2,7 @@
 {% block titulo %}Criar nova senha{% endblock %}
 {% block publico %}
 <div class="login"><div class="caixa">
-  <div class="marca"><img src="{{ url_for('logo') }}" alt="Porto Soluções Corporativas" style="max-height:72px;max-width:280px"></div>
+  <div class="marca"><img src="{{ url_for('static', filename='marca/simbolo-sisdark.svg') }}" alt=""><div><div class="marca-nome">SISPORTO</div><div class="marca-sub">GESTÃO DE CONSULTORIA</div></div></div>
   <div class="card">
     <h2>Criar nova senha</h2>
     {% include "_avisos.html" %}
@@ -14,5 +14,6 @@
       <button class="btn" style="width:100%">Salvar nova senha</button>
     </form>
   </div>
+  <p class="selo-casa">BY PORTO SOLUÇÕES</p>
 </div></div>
 {% endblock %}

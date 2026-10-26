@@ -2,54 +2,70 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{% block titulo %}SisPorto{% endblock %} · Porto Soluções</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+<title>{% block titulo %}SisPorto{% endblock %} · SisPorto</title>
+<link rel="icon" href="{{ url_for('static', filename='marca/favicon.svg') }}" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='marca/icone-180.png') }}">
+<meta name="theme-color" content="#021E45">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@600;700;800&amp;display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ versao }}">
 </head>
-<body>
+<body class="{{ 'app-on' if usuario else 'publico' }}">
 {% if usuario %}
 <header class="topbar">
   <button type="button" class="menu-btn" aria-label="Abrir menu" aria-controls="menu" aria-expanded="false">
     <span></span><span></span><span></span></button>
-  <img src="{{ url_for('logo') }}" alt="Porto Soluções Corporativas">
+  <img src="{{ url_for('static', filename='marca/simbolo-sisdark.svg') }}" alt=""><span class="marca-nome">SISPORTO</span>
 </header>
 <div class="sombra" hidden></div>
 <div class="app">
   <aside class="side" id="menu">
-    <div class="marca-logo"><img src="{{ url_for('logo') }}" alt="Porto Soluções Corporativas"></div>
+    <a class="marca-logo" href="{{ url_for('auth.inicio') }}" aria-label="SisPorto – início"><img src="{{ url_for('static', filename='marca/simbolo-sisdark.svg') }}" alt=""><span><span class="marca-nome">SISPORTO</span><span class="marca-sub">BY PORTO SOLUÇÕES</span></span></a>
     <nav>
       {% set ep = request.endpoint or '' %}
       {% macro item(endpoint, rotulo, ativo=None) -%}
         <a href="{{ url_for(endpoint) }}" class="{{ 'ativo' if (ativo if ativo is not none else (request.endpoint or '') == endpoint) }}">{{ rotulo }}</a>
       {%- endmacro %}
+      {% macro icone_svg(n) -%}
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+        {%- if n == 'painel' %}<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>
+        {%- elif n == 'atendimento' %}<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>
+        {%- elif n == 'horas' %}<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/>
+        {%- elif n == 'relatorios' %}<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>
+        {%- elif n == 'cadastros' %}<path d="M3 7h7l2 2h9v10H3z"/><path d="M3 7V5h6l2 2"/>
+        {%- elif n == 'config' %}<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/>
+        {%- else %}<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>
+        {%- endif %}</svg>
+      {%- endmacro %}
       {% macro pasta(nome, icone, endpoints) -%}
         {% set e = request.endpoint or '' %}
         {% set aberto = e in endpoints or (e.split('.')[0] ~ '.*') in endpoints %}
-        <details class="pasta" {{ 'open' if aberto }} data-pasta="{{ nome }}"><summary><span aria-hidden="true">{{ icone }}</span> {{ nome }}</summary><div>{{ caller() }}</div></details>
+        <details class="pasta" {{ 'open' if aberto }} data-pasta="{{ nome }}"><summary>{{ icone_svg(icone) }} {{ nome }}</summary><div>{{ caller() }}</div></details>
       {%- endmacro %}
       {% if usuario.perfil == 'cliente' %}
-        {% call pasta('Dashboards', '📊', ['portal.painel']) %}{{ item('portal.painel', 'Painel') }}{% endcall %}
-        {% call pasta('Atendimento', '🎧', ['portal.chamados', 'portal.chamado', 'portal.chamado_novo', 'kb.ajuda', 'kb.ver', 'extras.portal_lista']) %}
+        {% call pasta('Dashboards', 'painel', ['portal.painel']) %}{{ item('portal.painel', 'Painel') }}{% endcall %}
+        {% call pasta('Atendimento', 'atendimento', ['portal.chamados', 'portal.chamado', 'portal.chamado_novo', 'kb.ajuda', 'kb.ver', 'extras.portal_lista']) %}
           {{ item('portal.chamados', 'Meus chamados', ep in ('portal.chamados', 'portal.chamado')) }}
           {{ item('portal.chamado_novo', 'Abrir chamado') }}
           {{ item('kb.ajuda', 'Ajuda', ep in ('kb.ajuda', 'kb.ver')) }}
           <a href="{{ url_for('extras.portal_lista') }}" class="{{ 'ativo' if ep == 'extras.portal_lista' }}">Horas extras{% if extras_pendentes %} <span class="contador">{{ extras_pendentes }}</span>{% endif %}</a>
         {% endcall %}
-        {% call pasta('Relatórios', '📄', ['portal.horas']) %}{{ item('portal.horas', 'Relatório de horas') }}{% endcall %}
+        {% call pasta('Relatórios', 'relatorios', ['portal.horas']) %}{{ item('portal.horas', 'Relatório de horas') }}{% endcall %}
       {% else %}
         {% set adm = usuario.perfil == 'admin' %}
-        {% call pasta('Dashboards', '📊', ['equipe.painel', 'adm.dashboard']) %}
+        {% call pasta('Dashboards', 'painel', ['equipe.painel', 'adm.dashboard']) %}
           {{ item('equipe.painel', 'Painel operacional') }}
           {% if pode('dashboard') %}{{ item('adm.dashboard', 'Dashboard gerencial') }}{% endif %}
         {% endcall %}
         {% if pode('chamados') or pode('emails') or pode('conhecimento') %}
-        {% call pasta('Atendimento', '🎧', ['equipe.chamados', 'equipe.chamado', 'equipe.chamado_novo', 'equipe.emails_recusados', 'kb.lista', 'kb.ver', 'kb.editar']) %}
+        {% call pasta('Atendimento', 'atendimento', ['equipe.chamados', 'equipe.chamado', 'equipe.chamado_novo', 'equipe.emails_recusados', 'kb.lista', 'kb.ver', 'kb.editar']) %}
           {% if pode('chamados') %}{{ item('equipe.chamados', 'Chamados', ep in ('equipe.chamados', 'equipe.chamado')) }}{{ item('equipe.chamado_novo', 'Novo chamado') }}{% endif %}
           {% if pode('emails') %}{{ item('equipe.emails_recusados', 'E-mails não processados') }}{% endif %}
           {% if pode('conhecimento') %}{{ item('kb.lista', 'Base de conhecimento', ep in ('kb.lista', 'kb.ver', 'kb.editar')) }}{% endif %}
         {% endcall %}
         {% endif %}
         {% if pode('horas') or adm or pode('contratos') %}
-        {% call pasta('Horas', '⏱', ['equipe.horas', 'gestao.apontamento_proprio', 'gestao.aprovacao', 'gestao.apontamentos', 'gestao.apontamento_admin', 'gestao.saldos', 'extras.lista', 'gestao.fechamento']) %}
+        {% call pasta('Horas', 'horas', ['equipe.horas', 'gestao.apontamento_proprio', 'gestao.aprovacao', 'gestao.apontamentos', 'gestao.apontamento_admin', 'gestao.saldos', 'extras.lista', 'gestao.fechamento']) %}
           {% if pode('horas') or adm %}{{ item('equipe.horas', 'Minhas horas', ep in ('equipe.horas', 'gestao.apontamento_proprio')) }}{% endif %}
           {% if adm %}<a href="{{ url_for('gestao.aprovacao') }}" class="{{ 'ativo' if ep == 'gestao.aprovacao' }}">Aprovação de horas{% if a_aprovar %} <span class="contador">{{ a_aprovar }}</span>{% endif %}</a>
           {{ item('gestao.apontamentos', 'Apontamentos dos recursos', ep in ('gestao.apontamentos', 'gestao.apontamento_admin')) }}
@@ -59,12 +75,12 @@
         {% endcall %}
         {% endif %}
         {% if pode('relatorios') %}
-        {% call pasta('Relatórios', '📄', ['relatorios.*']) %}
+        {% call pasta('Relatórios', 'relatorios', ['relatorios.*']) %}
           {{ item('relatorios.indice', 'Todos os relatórios') }}
           {% for c in catalogo_relatorios if pode(c[3]) %}<a href="{{ url_for('relatorios.apontamentos') if c[0] == 'apontamentos' else url_for('relatorios.relatorio', chave=c[0]) }}" class="{{ 'ativo' if (ep == 'relatorios.relatorio' and request.view_args.chave == c[0]) or (c[0] == 'apontamentos' and ep == 'relatorios.apontamentos') }}">{{ c[1] }}</a>{% endfor %}
         {% endcall %}
         {% endif %}
-        {% call pasta('Cadastros', '🗂', ['equipe.clientes', 'equipe.cliente', 'equipe.cliente_novo', 'equipe.contrato', 'equipe.contrato_novo', 'contratos.*', 'equipe.usuarios_clientes', 'equipe.equipe_lista', 'equipe.usuario_editar', 'equipe.acessos', 'equipe.importar', 'equipe.tipos_servico']) %}
+        {% call pasta('Cadastros', 'cadastros', ['equipe.clientes', 'equipe.cliente', 'equipe.cliente_novo', 'equipe.contrato', 'equipe.contrato_novo', 'contratos.*', 'equipe.usuarios_clientes', 'equipe.equipe_lista', 'equipe.usuario_editar', 'equipe.acessos', 'equipe.importar', 'equipe.tipos_servico']) %}
           {{ item('equipe.clientes', 'Clientes', ep in ('equipe.clientes', 'equipe.cliente', 'equipe.cliente_novo')) }}
           {% if pode('contratos') %}{{ item('contratos.lista', 'Contratos', ep.startswith('contratos.') or ep in ('equipe.contrato', 'equipe.contrato_novo')) }}{% endif %}
           {% if pode('clientes') %}{{ item('equipe.usuarios_clientes', 'Usuários de clientes') }}{% endif %}
@@ -73,7 +89,7 @@
           {% if pode('importar') %}{{ item('equipe.importar', 'Importar planilha') }}{% endif %}
         {% endcall %}
         {% if pode('config') %}
-        {% call pasta('Configurações', '⚙', ['equipe.config_sla', 'equipe.config_integracoes', 'equipe.config_marca', 'kb.respostas']) %}
+        {% call pasta('Configurações', 'config', ['equipe.config_sla', 'equipe.config_integracoes', 'equipe.config_marca', 'kb.respostas']) %}
           {{ item('equipe.config_sla', 'Prazos (SLA)') }}
           {{ item('kb.respostas', 'Respostas prontas') }}
           {{ item('equipe.config_integracoes', 'Integrações') }}
@@ -81,7 +97,7 @@
         {% endcall %}
         {% endif %}
         {% if adm %}
-        {% call pasta('Administração', '🛡', ['equipe.acessos', 'adm.consultas', 'adm.banco']) %}
+        {% call pasta('Administração', 'admin', ['equipe.acessos', 'adm.consultas', 'adm.banco']) %}
           {{ item('equipe.acessos', 'Acessos por rotina') }}
           {{ item('adm.consultas', 'Consultas SQL') }}
           {{ item('adm.banco', 'Dicionário de dados') }}
@@ -90,12 +106,12 @@
       {% endif %}
     </nav>
     <div class="quem">
-      <div style="color:#fff">{{ usuario.nome }} <span style="color:#8394ad">· {{ usuario.codigo }}</span></div>
+      <div style="color:#fff">{{ usuario.nome }} <span style="color:#9DB3D3">· {{ usuario.codigo }}</span></div>
       <div>{{ usuario.perfil|rotulo('perfil') }}</div>
-      <a href="{{ url_for('auth.trocar_senha') }}" style="color:#9fb3cf">Trocar senha</a>
-      {% if usuario.perfil != 'cliente' %}<br><a href="{{ url_for('auth.conta_2fa') }}" style="color:#9fb3cf">Verificação em 2 etapas</a>{% endif %}
+      <a href="{{ url_for('auth.trocar_senha') }}" style="color:#9DB3D3">Trocar senha</a>
+      {% if usuario.perfil != 'cliente' %}<br><a href="{{ url_for('auth.conta_2fa') }}" style="color:#9DB3D3">Verificação em 2 etapas</a>{% endif %}
       <form method="post" action="{{ url_for('auth.sair') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Sair</button></form>
-      <div style="color:#6f819b;font-size:11px;margin-top:8px">SisPorto v{{ versao }}</div>
+      <div style="color:#9DB3D3;font-size:11px;margin-top:8px">SisPorto v{{ versao }} · by Porto Soluções</div>
     </div>
   </aside>
   <main>

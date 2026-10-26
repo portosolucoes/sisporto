@@ -5,6 +5,7 @@ import base64
 import functools
 import hashlib
 import hmac
+import os
 import struct
 import secrets
 import time
@@ -24,6 +25,15 @@ GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
 
 SENHA_MINIMA = 10
+
+
+def ip_cliente():
+    """IP de quem está usando (limites de tentativas). Atrás do Firebase, o último salto é o próprio Firebase."""
+    rota = request.access_route
+    publico = (current_app.config.get("URL_PUBLICA") or os.environ.get("URL_PUBLICA", "")).split("//")[-1].strip("/")
+    if publico and request.headers.get("X-Forwarded-Host", "").split(",")[0].strip() == publico and len(rota) >= 2:
+        return rota[-2]
+    return request.remote_addr or "?"
 
 
 def carregar_usuario():
@@ -93,7 +103,7 @@ def inicio():
 def login():
     if request.method == "POST":
         from .limpeza import excedeu, registrar
-        ip = request.remote_addr or "?"
+        ip = ip_cliente()
         alvo = (request.form.get("email") or "").strip().lower()
         if excedeu(f"login-ip:{ip}", 20, 15) or excedeu(f"login-usuario:{alvo}", 8, 15):
             flash("Muitas tentativas sem sucesso. Aguarde 15 minutos ou use “Esqueci minha senha”.", "erro")
@@ -232,7 +242,7 @@ def recuperar_senha():
             flash("Digite o seu e-mail para recuperar a senha.", "erro")
             return render_template("recuperar.html", email=email)
         from .limpeza import excedeu, registrar
-        ip = request.remote_addr or "?"
+        ip = ip_cliente()
         if excedeu(f"senha-ip:{ip}", 10, 60):
             flash("Muitos pedidos deste local. Tente de novo em 1 hora.", "erro")
             return render_template("recuperar.html", email=email), 429
@@ -255,7 +265,7 @@ def enviar_link_senha(u, forcar=False):
     token = secrets.token_urlsafe(32)
     db().run("""INSERT INTO senha_tokens (usuario_id, token_hash, expira_em, ip)
                 VALUES (%s, %s, now() + make_interval(mins => %s), %s)""",
-             [u["id"], _hash_token(token), VALIDADE_TOKEN_MIN, request.remote_addr])
+             [u["id"], _hash_token(token), VALIDADE_TOKEN_MIN, ip_cliente()])
     link = url_for("auth.redefinir_senha", token=token, _external=True)
     corpo = (f"Olá, {u['nome']}.\n\nRecebemos um pedido para criar uma nova senha no SisPorto "
              f"para o usuário {u.get('codigo') or ''}.\n"

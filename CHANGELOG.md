@@ -1,7 +1,23 @@
 # SisPorto – histórico de versões
 
-Toda versão informa o **orçamento**: custo mensal estimado, teto (R$ 200) e corte automático (R$ 400),
+Toda versão informa o **orçamento**: custo mensal estimado, teto (R$ 400) e corte automático (R$ 500),
 conforme `infra/gcp/orcamento.conf`. Avisos de custo e travas vão sempre para contato@portosolucoes.com.br.
+
+## 1.8.0 — 26/10/2026 (nova identidade visual)
+- **Orçamento:** custo estimado R$ 90/mês · teto R$ 400 · corte automático R$ 500 · impacto desta versão: nenhum (só aparência).
+- Nova marca do SisPorto (identidade "Porto Soluções · produto"): símbolo com onda e pixels turquesa, nome SISPORTO e selo "by Porto Soluções".
+- Cores: azul-marinho #021E45 (menu e entrada), azul #0A2F66 (textos), turquesa #22C0B2 (botões e destaques), fundo #F2F8F8; selos de status nas cores do modelo; barra de saldo em degradê azul→turquesa.
+- Tipografia: Exo 2 nos títulos e Inter nos textos (Inter incluída no próprio sistema).
+- Tela de entrada escura, menu lateral com ícones desenhados (sem emoji), ícone da aba (favicon) e ícone de atalho no celular.
+- Logo padrão dos PDFs trocado pela nova marca. Se houver logo enviado em Configurações → Logo da empresa, ele continua valendo nos PDFs ("Voltar ao logo padrão" usa a nova marca).
+
+## 1.7.1 — 26/10/2026 (domínio próprio + novo orçamento)
+- **Orçamento:** custo estimado R$ 90/mês · **teto R$ 400** (avisos em R$ 200, 320, 360 e 400) · **corte automático R$ 500** · impacto desta versão: + R$ 0 a 5/mês (Firebase Hosting na frente do sistema; grátis até 10 GB e 360 MB/dia de tráfego).
+- Endereço oficial **https://sistema.portosolucoes.com.br** (Firebase Hosting → Cloud Run). O endereço run.app continua funcionando.
+- Script `infra/gcp/configurar-dominio.sh` (liga o domínio, mostra os registros DNS do Registro.br, confere e conclui).
+- Links de e-mails e login Google passam a usar o domínio oficial (variável URL_PUBLICA).
+- Segurança: páginas marcadas como "não guardar em cache" (o CDN nunca guarda telas de usuários); limite de tentativas usa o IP real atrás do Firebase.
+- Cookie de login renomeado para `__session` (exigência do Firebase): **todos precisam entrar de novo uma vez** após a atualização.
 
 ## 1.7.0 — 24/10/2026 (Ajustes 02 + limpeza)
 - **Orçamento:** custo estimado R$ 85/mês · teto R$ 200 · corte automático R$ 400 · impacto desta versão: **reduz** o crescimento do banco (anexos antigos e históricos saem sozinhos).

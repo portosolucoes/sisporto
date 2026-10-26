@@ -2,8 +2,8 @@
 # =============================================================================
 #  SisPorto – Travas de custo v2  (rodar no Cloud Shell:  bash travas-v2.sh)
 #
-#  1. Teto mensal R$ 200 com avisos em 50% / 80% / 90% / 100% + previsão de estouro
-#  2. CORTE AUTOMÁTICO em R$ 400: o sistema sai do ar (nada é apagado) e chega e-mail
+#  1. Teto mensal (orcamento.conf) com avisos em 50% / 80% / 90% / 100% + previsão de estouro
+#  2. CORTE AUTOMÁTICO (orcamento.conf): o sistema sai do ar (nada é apagado) e chega e-mail
 #  3. Alertas de disco do banco (70% e 85%) e de sistema fora do ar
 #  4. Guarda só as 5 últimas versões montadas (Artifact Registry)
 #  5. Cotas de máquinas virtuais e GPU zeradas (proteção contra invasão/mineração)
@@ -13,6 +13,7 @@
 set -uo pipefail
 source "$(dirname "$0")/orcamento.conf"
 EMAIL="$EMAIL_NOTIFICACOES"; TETO="$TETO_BRL"; CORTE="$CORTE_BRL"
+AVISOS="$((TETO*50/100)), $((TETO*80/100)), $((TETO*90/100)) e $TETO"
 PROJECT_ID="porto-sisporto-2610"; REGIAO="southamerica-east1"; SERVICO="sisporto"
 TOPICO="orcamento-alertas"; FUNCAO="porto-monitor-orcamento"; SA_NOME="porto-orcamento-fn"
 ORC_NOME="Porto - Teto mensal SisPorto"
@@ -32,13 +33,13 @@ gcloud services enable billingbudgets.googleapis.com monitoring.googleapis.com c
 CANAL=$(gcloud beta monitoring channels list --filter="type=\"email\" AND labels.email_address=\"$EMAIL\"" \
   --format="value(name)" | head -n1)
 
-# --- 1. Teto R$ 200 -----------------------------------------------------------------------------
+# --- 1. Teto mensal -----------------------------------------------------------------------------
 say "Teto mensal: R\$ $TETO"
 ORC=$(gcloud billing budgets list --billing-account="$BILLING" --filter="displayName=\"$ORC_NOME\"" \
   --format="value(name)" | head -n1)
 if [[ -n "$ORC" ]]; then
   gcloud billing budgets update "$ORC" --billing-account="$BILLING" --budget-amount="${TETO}BRL" >/dev/null \
-    && echo "   orçamento atualizado para R\$ $TETO (avisos em R\$ 100, 160, 180, 200 e previsão)"
+    && echo "   orçamento atualizado para R\$ $TETO (avisos em R\$ $AVISOS e previsão)"
 else
   gcloud billing budgets create --billing-account="$BILLING" --display-name="$ORC_NOME" \
     --budget-amount="${TETO}BRL" --filter-projects="projects/$PROJECT_ID" \
@@ -48,7 +49,7 @@ else
     --notifications-rule-monitoring-notification-channels="$CANAL" >/dev/null
 fi
 
-# --- 2. Corte automático em R$ 400 --------------------------------------------------------------
+# --- 2. Corte automático (CORTE_BRL) --------------------------------------------------------------
 say "Corte automático em R\$ $CORTE"
 gcloud run services add-iam-policy-binding "$SERVICO" --region="$REGIAO" --member="serviceAccount:$SA" \
   --role=roles/run.admin >/dev/null || aviso "não consegui dar à função permissão de bloquear o sistema"
@@ -63,7 +64,7 @@ from google.auth.transport.requests import AuthorizedSession
 from google.cloud import monitoring_v3
 
 P, R, S = os.environ["PROJECT_ID"], os.environ["REGIAO"], os.environ["SERVICO"]
-CORTE = float(os.environ.get("CORTE_BRL", "400"))
+CORTE = float(os.environ.get("CORTE_BRL", "500"))
 mon = monitoring_v3.MetricServiceClient()
 
 def metrica(tipo, valor):
@@ -160,10 +161,10 @@ gcloud resource-manager org-policies enable-enforce iam.disableServiceAccountKey
 
 say "PRONTO"
 cat <<FIM
-Teto R\$ $TETO (avisos em 100/160/180/200 + previsão) · corte automático em R\$ $CORTE · e-mails para $EMAIL
+Teto R\$ $TETO (avisos em R\$ $AVISOS + previsão) · corte automático em R\$ $CORTE · e-mails para $EMAIL
 
 TESTAR O CORTE (o sistema sai do ar em ~1 min):
-  gcloud pubsub topics publish $TOPICO --message='{"costAmount":450,"budgetAmount":$TETO,"currencyCode":"BRL"}'
+  gcloud pubsub topics publish $TOPICO --message='{"costAmount":$((CORTE+50)),"budgetAmount":$TETO,"currencyCode":"BRL"}'
 LIBERAR DEPOIS DO TESTE:
   cd ~/sisporto && bash infra/gcp/liberar-sistema.sh teste
 FIM

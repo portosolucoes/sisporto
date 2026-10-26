@@ -1619,3 +1619,73 @@ class TestVersao17(Base):
         adm = self.cliente_http("contato@portosolucoes.com.br")
         r = adm.get(f"/anexos/{aid}")
         self.assertEqual(r.headers.get("Location"), "https://drive.google.com/x")
+
+
+class TestDominio(Base):
+    """1.7.1: sistema atrás do Firebase Hosting (sistema.portosolucoes.com.br)."""
+
+    def test_cookie_de_sessao_compativel_com_firebase(self):
+        c = self.app.test_client()
+        r = c.get("/entrar")
+        self.assertIn("__session=", r.headers.get("Set-Cookie", ""))
+        self.cliente_http("contato@portosolucoes.com.br")  # login continua funcionando
+
+    def test_paginas_nunca_ficam_no_cache_do_cdn(self):
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        self.assertEqual(adm.get("/painel").headers["Cache-Control"], "private, no-store")
+        self.assertEqual(adm.get("/entrar").headers["Cache-Control"], "private, no-store")
+        self.assertIn("public", self.app.test_client().get("/marca/logo").headers.get("Cache-Control", ""))
+
+    def test_links_usam_o_dominio_oficial(self):
+        from flask import url_for
+        app = create_app({"DATABASE_URL": TEST_DSN, "TESTING": True, "SECRET_KEY": "teste",
+                          "URL_PUBLICA": "https://sistema.portosolucoes.com.br"})
+        c = app.test_client()
+        r = c.get("/", headers={"Host": "sisporto-xyz-rj.a.run.app"})
+        self.assertTrue(r.headers["Location"].startswith(("https://sistema.portosolucoes.com.br/", "/entrar")))
+        with app.test_request_context("/", base_url="https://sistema.portosolucoes.com.br"):
+            self.assertEqual(url_for("auth.google_retorno", _external=True),
+                             "https://sistema.portosolucoes.com.br/entrar/google/retorno")
+
+    def test_ip_real_atras_do_firebase(self):
+        from app.auth import ip_cliente
+        app = create_app({"DATABASE_URL": TEST_DSN, "TESTING": True, "SECRET_KEY": "teste",
+                          "URL_PUBLICA": "https://sistema.portosolucoes.com.br"})
+        with app.test_request_context("/", headers={"X-Forwarded-For": "200.1.2.3, 35.4.5.6",
+                                                    "X-Forwarded-Host": "sistema.portosolucoes.com.br"},
+                                      environ_base={"REMOTE_ADDR": "35.4.5.6"}):
+            self.assertEqual(ip_cliente(), "200.1.2.3")
+        with app.test_request_context("/", headers={"X-Forwarded-For": "200.1.2.3, 35.4.5.6"},
+                                      environ_base={"REMOTE_ADDR": "35.4.5.6"}):
+            self.assertEqual(ip_cliente(), "35.4.5.6")
+
+    def test_orcamento_aprovado(self):
+        conf = open(os.path.join(os.path.dirname(__file__), "..", "infra", "gcp", "orcamento.conf")).read()
+        self.assertIn("TETO_BRL=400", conf)
+        self.assertIn("CORTE_BRL=500", conf)
+        self.assertIn('EMAIL_NOTIFICACOES="contato@portosolucoes.com.br"', conf)
+
+
+class TestIdentidade18(Base):
+    """1.8.0: nova identidade visual do SisPorto."""
+
+    def test_marca_e_fontes_servidas(self):
+        c = self.app.test_client()
+        html = c.get("/entrar").get_data(as_text=True)
+        self.assertIn("marca/simbolo-sisdark.svg", html)
+        self.assertIn("marca/favicon.svg", html)
+        self.assertIn("BY PORTO SOLUÇÕES", html)
+        for arq in ("marca/simbolo-sis.svg", "marca/simbolo-sisdark.svg", "marca/favicon.svg", "marca/icone-180.png",
+                    "fontes/inter-regular.woff", "fontes/inter-bold.woff"):
+            r = c.get(f"/static/{arq}")
+            self.assertEqual(r.status_code, 200, arq)
+            r.close()
+        css = c.get("/static/app.css").get_data(as_text=True)
+        self.assertIn("--turquesa:#22C0B2", css)
+
+    def test_menu_sem_emoji(self):
+        adm = self.cliente_http("contato@portosolucoes.com.br")
+        html = adm.get("/painel").get_data(as_text=True)
+        self.assertIn('class="marca-logo"', html)
+        for e in ("📊", "🎧", "⏱", "📄", "🗂", "⚙", "🛡"):
+            self.assertNotIn(e, html)

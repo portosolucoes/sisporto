@@ -6,7 +6,7 @@ set -euo pipefail
 PROJECT_ID="porto-sisporto-2610"; REGIAO="southamerica-east1"
 gcloud config set project "$PROJECT_ID" >/dev/null
 if [[ "${1:-}" == "teste" ]]; then
-  gcloud pubsub topics publish orcamento-alertas --message='{"costAmount":0,"budgetAmount":200,"currencyCode":"BRL"}' >/dev/null
+  gcloud pubsub topics publish orcamento-alertas --message='{"costAmount":0,"budgetAmount":400,"currencyCode":"BRL"}' >/dev/null
   MES=""
 else
   MES=$(date +%Y-%m)

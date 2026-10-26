@@ -8,8 +8,22 @@ from flask import Flask, abort, g, request, session
 
 from . import db as dbmod
 
-VERSAO = "1.7.0"
+VERSAO = "1.8.0"
 from . import util
+
+
+class _HostPublico:
+    """Faz o sistema gerar links sempre com o endereço oficial (URL_PUBLICA), por onde quer que seja acessado."""
+
+    def __init__(self, app, url):
+        from urllib.parse import urlsplit
+        u = urlsplit(url)
+        self.app, self.esquema, self.host = app, u.scheme or "https", u.netloc
+
+    def __call__(self, environ, start_response):
+        environ["HTTP_HOST"] = self.host
+        environ["wsgi.url_scheme"] = self.esquema
+        return self.app(environ, start_response)
 
 
 def create_app(config: dict | None = None) -> Flask:
@@ -22,6 +36,8 @@ def create_app(config: dict | None = None) -> Flask:
         DOMINIO_EQUIPE=os.environ.get("DOMINIO_EQUIPE", "portosolucoes.com.br"),
         INTEGRACAO_TOKEN=os.environ.get("INTEGRACAO_TOKEN", ""),
         ADMIN_MASTER=os.environ.get("ADMIN_MASTER", "contato@portosolucoes.com.br").lower(),
+        # Firebase Hosting (domínio sistema.portosolucoes.com.br) só repassa o cookie chamado "__session"
+        SESSION_COOKIE_NAME="__session",
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SEGURO", "1") == "1",
@@ -33,6 +49,16 @@ def create_app(config: dict | None = None) -> Flask:
     if os.environ.get("ATRAS_DE_PROXY", "1") == "1":  # Cloud Run: https e host corretos nos links
         from werkzeug.middleware.proxy_fix import ProxyFix
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    url_publica = (app.config.get("URL_PUBLICA") or os.environ.get("URL_PUBLICA", "")).strip().rstrip("/")
+    if url_publica:  # links de e-mails, login Google etc. sempre com o domínio oficial
+        app.wsgi_app = _HostPublico(app.wsgi_app, url_publica)
+
+    @app.after_request
+    def _sem_cache_compartilhado(r):
+        """Páginas são pessoais: o CDN do Firebase nunca pode guardar cópia (só arquivos estáticos e logo)."""
+        if not (request.path.startswith("/static/") or request.path == "/marca/logo"):
+            r.headers["Cache-Control"] = "private, no-store"
+        return r
 
     app.after_request(dbmod.confirmar)
     app.teardown_appcontext(dbmod.fechar)

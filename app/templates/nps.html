@@ -2,7 +2,7 @@
 {% block titulo %}Pesquisa de satisfação{% endblock %}
 {% block publico %}
 <div class="login"><div class="caixa" style="max-width:560px">
-  <div class="marca"><img src="{{ url_for('logo') }}" alt="Porto Soluções Corporativas" style="max-height:72px;max-width:280px"></div>
+  <div class="marca"><img src="{{ url_for('static', filename='marca/simbolo-sisdark.svg') }}" alt=""><div><div class="marca-nome">SISPORTO</div><div class="marca-sub">GESTÃO DE CONSULTORIA</div></div></div>
   <div class="card">
   {% if r.respondido_em %}
     <h2>Obrigado, {{ r.nome.split()[0] }}!</h2><p class="muted">Sua resposta foi registrada e nos ajuda a melhorar.</p>
@@ -17,5 +17,6 @@
     </form>
   {% endif %}
   </div>
+  <p class="selo-casa">BY PORTO SOLUÇÕES</p>
 </div></div>
 {% endblock %}
